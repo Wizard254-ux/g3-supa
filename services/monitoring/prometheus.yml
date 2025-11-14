@@ -1,0 +1,46 @@
+# =============================================================================
+# Prometheus Configuration (monitoring/prometheus.yml)
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  # ISP Middleware Application
+  - job_name: 'isp-middleware'
+    static_configs:
+      - targets: [ 'app:5000' ]
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # System metrics (if node_exporter is installed)
+  - job_name: 'node'
+    static_configs:
+      - targets: [ 'localhost:9100' ]
+
+  # PostgreSQL metrics (if postgres_exporter is installed)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: [ 'postgres-exporter:9187' ]
+
+  # Redis metrics (if redis_exporter is installed)
+  - job_name: 'redis'
+    static_configs:
+      - targets: [ 'redis-exporter:9121' ]
+
+  # Nginx metrics (if nginx-prometheus-exporter is installed)
+  - job_name: 'nginx'
+    static_configs:
+      - targets: [ 'nginx-exporter:9113' ]
+

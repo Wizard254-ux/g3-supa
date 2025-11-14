@@ -1,0 +1,138 @@
+# =============================================================================
+# Prometheus Alert Rules (monitoring/rules/isp_alerts.yml)
+# =============================================================================
+
+groups:
+  - name: isp_middleware_alerts
+    rules:
+      # Application health alerts
+      - alert: ISPMiddlewareDown
+        expr: up{job="isp-middleware"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ISP Middleware application is down"
+          description: "ISP Middleware has been down for more than 1 minute"
+
+      - alert: HighErrorRate
+        expr: rate(flask_http_request_exceptions_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate in ISP Middleware"
+          description: "Error rate is {{ $value }} errors per second"
+
+      # Database alerts
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of database connections"
+          description: "Database has {{ $value }} active connections"
+
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL database has been down for more than 1 minute"
+
+      # Redis alerts
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute"
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      # System resource alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value }}% available on {{ $labels.mountpoint }}"
+
+      # Network alerts
+      - alert: HighNetworkErrors
+        expr: rate(node_network_receive_errs_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High network errors"
+          description: "Network interface {{ $labels.device }} has {{ $value }} errors per second"
+
+      # Application-specific alerts
+      - alert: HighAuthenticationFailures
+        expr: rate(radius_auth_failures_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Authentication failure rate is {{ $value }} per second"
+
+      - alert: ActiveSessionsHigh
+        expr: radius_active_sessions > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of active sessions"
+          description: "There are {{ $value }} active RADIUS sessions"
+
+      - alert: MikroTikConnectionLost
+        expr: mikrotik_connection_status == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MikroTik connection lost"
+          description: "Connection to MikroTik device {{ $labels.device }} is down"
+
+      - alert: OpenVPNDown
+        expr: openvpn_server_status == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenVPN server is down"
+          description: "OpenVPN server has been down for more than 1 minute"
