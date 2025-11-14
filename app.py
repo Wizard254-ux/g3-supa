@@ -18,7 +18,7 @@ import os
 from decouple import config
 from celery import Celery
 from flask_vite import Vite
-
+from sqlalchemy import text
 # Import local modules
 from config import Config
 from models import init_db, db, migrate
@@ -99,7 +99,7 @@ def create_app(config_class=Config):
         """Health check endpoint for monitoring"""
         try:
             # Check database connection
-            db.session.execute('SELECT 1')
+            db.session.execute(text('SELECT 1'))
 
             # Check Redis connection
             cache.get('health_check')
