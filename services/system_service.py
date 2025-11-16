@@ -95,7 +95,7 @@ class OpenVPNService(SystemService):
 
             # Use management script to deploy
             success, stdout, stderr = self._run_command([
-                'sudo',
+                '/usr/bin/sudo',
                 str(self.scripts_dir / 'manage_openvpn.sh'),
                 'deploy_config',
                 config_name
@@ -123,7 +123,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_openvpn.sh'),
             'remove_config',
             config_name
@@ -144,7 +144,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'start', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'start', f'openvpn@server'
         ])
 
         if not success:
@@ -161,7 +161,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'restart', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'restart', f'openvpn@server'
         ])
 
         if not success:
@@ -179,7 +179,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'stop', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'stop', f'openvpn@server'
         ])
 
         if not success:
@@ -197,7 +197,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'status', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'status', f'openvpn@server'
         ])
 
         # Status command returns non-zero for inactive services, so we parse output
