@@ -290,10 +290,21 @@ class OpenVPNManager:
             }
 
         except SystemOperationError as e:
-            raise
+            logger.error(f"Failed to generate client certificate for {client_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e),
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
         except Exception as e:
             logger.error(f"Failed to generate client certificate for {client_name}", error=str(e))
-            raise SystemOperationError(f"Certificate generation failed: {e}")
+            return {
+                'success': False,
+                'error': f'Certificate generation failed: {str(e)}',
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
     def _validate_email(self, email: str) -> bool:
         """Validate email format"""
