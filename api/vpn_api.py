@@ -190,7 +190,7 @@ def create_client():
         logger.error("Error creating VPN client", error=e or "Unknown error")
         return jsonify({
             'success': False,
-            'error': 'Internal server error'
+            'error': 'Internal server error 56'
         })
 
 
