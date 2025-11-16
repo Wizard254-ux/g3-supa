@@ -70,6 +70,10 @@ class OpenVPNManager:
             Path(self.client_config_dir).mkdir(parents=True, exist_ok=True)
             Path(f"{self.config_dir}/keys").mkdir(parents=True, exist_ok=True)
             Path(f"{self.config_dir}/ccd").mkdir(parents=True, exist_ok=True)
+            Path(f"{self.config_dir}/client_metadata").mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            logger.error("Permission denied creating OpenVPN directories. Run fix_openvpn_permissions.sh as root.", error=str(e))
+            raise SystemOperationError(f"Directory creation failed due to permissions. Please ensure the application user has write access to {self.client_config_dir} and {self.config_dir}/client_metadata")
         except Exception as e:
             logger.error("Failed to create OpenVPN directories", error=str(e))
             raise SystemOperationError(f"Directory creation failed: {e}")
