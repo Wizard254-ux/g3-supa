@@ -557,20 +557,20 @@ validate_cert_name() {
 case "$ACTION" in
     "generate_client")
         validate_cert_name "$CERT_NAME"
-        cd /etc/openvpn/easy-rsa/server/ || exit 1
+        cd /etc/openvpn/server/easy-rsa/ || exit 1
         echo "yes" | ./easyrsa build-client-full "$CERT_NAME" nopass
         echo "Client certificate generated: ${CERT_NAME}"
         ;;
     "revoke_client")
         validate_cert_name "$CERT_NAME"
-        cd /etc/openvpn/easy-rsa/server || exit 1
+        cd /etc/openvpn/server/easy-rsa/ || exit 1
         echo "yes" | ./easyrsa revoke "$CERT_NAME"
         echo "yes" | ./easyrsa gen-crl
         echo "Client certificate revoked: ${CERT_NAME}"
         ;;
     "sign_client")
         validate_cert_name "$CERT_NAME"
-        cd /etc/openvpn/easy-rsa/server || exit 1
+        cd /etc/openvpn/server/easy-rsa/ || exit 1
         echo "Signing existing client request: $CERT_NAME"
         echo "yes" | ./easyrsa sign-req client "$CERT_NAME"
         ;;
