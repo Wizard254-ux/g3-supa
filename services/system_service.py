@@ -235,13 +235,13 @@ class CertificateService(SystemService):
 
                 # Remove the existing request file
                 cleanup_success, _, cleanup_stderr = self._run_command([
-                    'sudo', 'rm', '-f', req_file_path
+                    '/usr/bin/sudo', '/usr/bin/rm', '-f', req_file_path
                 ])
 
                 if cleanup_success:
                     # Retry the certificate generation
                     success, stdout, stderr = self._run_command([
-                        'sudo',
+                        '/usr/bin/sudo',
                         str(self.scripts_dir / 'manage_certificates.sh'),
                         'generate_client',
                         cert_name
@@ -291,7 +291,7 @@ class CertificateService(SystemService):
 
             # Use sign-req command instead of build-client-full
             success, stdout, stderr = self._run_command([
-                'sudo',
+                '/usr/bin/sudo',
                 str(self.scripts_dir / 'manage_certificates.sh'),
                 "sign_client",
                 cert_name
@@ -319,7 +319,7 @@ class CertificateService(SystemService):
             raise SystemOperationError("Invalid certificate name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_certificates.sh'),
             'revoke_client',
             cert_name
@@ -347,7 +347,7 @@ class NetworkService(SystemService):
             if param.startswith('-') and param not in allowed_params:
                 raise SystemOperationError(f"Parameter not allowed: {param}")
 
-        command = ['sudo', 'iptables'] + rule_params
+        command = ['/usr/bin/sudo', '/usr/sbin/iptables'] + rule_params
         success, stdout, stderr = self._run_command(command)
 
         if not success:
@@ -368,7 +368,7 @@ class NetworkService(SystemService):
         if not self._validate_input(gateway, r'^(\d{1,3}\.){3}\d{1,3}$'):
             raise SystemOperationError("Invalid gateway format")
 
-        command = ['sudo', 'ip', 'route', 'add', destination, 'via', gateway]
+        command = ['/usr/bin/sudo', '/usr/sbin/ip', 'route', 'add', destination, 'via', gateway]
         if interface:
             if not self._validate_input(interface, r'^[a-zA-Z0-9]+$'):
                 raise SystemOperationError("Invalid interface name")
@@ -393,7 +393,7 @@ class FreeRADIUSService(SystemService):
     def start_service(self) -> Dict:
         """Start FreeRADIUS service"""
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'start', 'freeradius'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'start', 'freeradius'
         ])
 
         if not success:
@@ -408,7 +408,7 @@ class FreeRADIUSService(SystemService):
     def stop_service(self) -> Dict:
         """Stop FreeRADIUS service"""
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'stop', 'freeradius'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'stop', 'freeradius'
         ])
 
         if not success:
@@ -423,7 +423,7 @@ class FreeRADIUSService(SystemService):
     def restart_service(self) -> Dict:
         """Restart FreeRADIUS service"""
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'restart', 'freeradius'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'restart', 'freeradius'
         ])
 
         if not success:
