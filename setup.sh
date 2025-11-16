@@ -710,6 +710,19 @@ create_directories() {
     mkdir -p "$CONFIG_DIR/nginx"
     mkdir -p "$CONFIG_DIR/supervisor"
 
+    # Set permissions for OpenVPN directories if they exist
+    if [[ -d /etc/openvpn/clients ]]; then
+        print_status "Setting permissions for /etc/openvpn/clients"
+        chown -R "$APP_USER:$APP_USER" /etc/openvpn/clients
+        chmod 755 /etc/openvpn/clients
+    fi
+
+    if [[ -d /etc/openvpn/client_metadata ]]; then
+        print_status "Setting permissions for /etc/openvpn/client_metadata"
+        chown -R "$APP_USER:$APP_USER" /etc/openvpn/client_metadata
+        chmod 755 /etc/openvpn/client_metadata
+    fi
+
     # Set permissions
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
     chown -R "$APP_USER:$APP_USER" "$LOG_DIR"
