@@ -576,7 +576,7 @@ case "$ACTION" in
         ;;
     "list_certificates")
         if [[ -f "/etc/openvpn/server/easy-rsa/pki/ca.crt" ]]; then
-            openssl x509 -in /etc/openvpn/easy-rsa/pki/ca.crt -noout -text
+            openssl x509 -in /etc/openvpn/server/easy-rsa/pki/ca.crt -noout -text
         else
             echo "CA certificate not found"
         fi
