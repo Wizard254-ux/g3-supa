@@ -735,6 +735,12 @@ create_directories() {
     chmod 755 /etc/openvpn/ccd
     print_status "Set permissions for /etc/openvpn/ccd"
 
+    # Create keys directory
+    mkdir -p /etc/openvpn/keys
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/keys
+    chmod 755 /etc/openvpn/keys
+    print_status "Set permissions for /etc/openvpn/keys"
+
     # Set permissions
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
     chown -R "$APP_USER:$APP_USER" "$LOG_DIR"
