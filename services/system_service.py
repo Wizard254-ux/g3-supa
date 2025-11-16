@@ -219,7 +219,7 @@ class CertificateService(SystemService):
         if not self._validate_input(cert_name, r'^f2net_[a-zA-Z0-9_-]+$'):
             raise SystemOperationError("Invalid certificate name format")
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_certificates.sh'),
             'generate_client',
             cert_name
@@ -279,7 +279,7 @@ class CertificateService(SystemService):
             raise SystemOperationError("Invalid certificate name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_certificates.sh'),
             'generate_client',
             cert_name
