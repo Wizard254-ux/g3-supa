@@ -710,18 +710,30 @@ create_directories() {
     mkdir -p "$CONFIG_DIR/nginx"
     mkdir -p "$CONFIG_DIR/supervisor"
 
-    # Set permissions for OpenVPN directories if they exist
-    if [[ -d /etc/openvpn/clients ]]; then
-        print_status "Setting permissions for /etc/openvpn/clients"
-        chown -R "$APP_USER:$APP_USER" /etc/openvpn/clients
-        chmod 755 /etc/openvpn/clients
-    fi
+    # Create and set permissions for OpenVPN directories
+    # These directories are needed by the application to store client configs
+    print_status "Setting up OpenVPN directories for $APP_USER"
 
-    if [[ -d /etc/openvpn/client_metadata ]]; then
-        print_status "Setting permissions for /etc/openvpn/client_metadata"
-        chown -R "$APP_USER:$APP_USER" /etc/openvpn/client_metadata
-        chmod 755 /etc/openvpn/client_metadata
-    fi
+    # Create /etc/openvpn if it doesn't exist
+    mkdir -p /etc/openvpn
+
+    # Create clients directory
+    mkdir -p /etc/openvpn/clients
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/clients
+    chmod 755 /etc/openvpn/clients
+    print_status "Set permissions for /etc/openvpn/clients"
+
+    # Create client_metadata directory
+    mkdir -p /etc/openvpn/client_metadata
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/client_metadata
+    chmod 755 /etc/openvpn/client_metadata
+    print_status "Set permissions for /etc/openvpn/client_metadata"
+
+    # Create ccd directory if needed
+    mkdir -p /etc/openvpn/ccd
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/ccd
+    chmod 755 /etc/openvpn/ccd
+    print_status "Set permissions for /etc/openvpn/ccd"
 
     # Set permissions
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
@@ -729,7 +741,7 @@ create_directories() {
     chown -R "$APP_USER:$APP_USER" "$BACKUP_DIR"
     chown -R "$APP_USER:$APP_USER" "/var/uploads/f2net_isp"
 
-    print_success "Directories created"
+    print_success "Directories created and permissions set"
 }
 
 setup_database() {

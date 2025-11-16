@@ -490,11 +490,22 @@ comp-lzo
                 'removed_files': removed_files
             }
 
-        except SystemOperationError:
-            raise
+        except SystemOperationError as e:
+            logger.error(f"Failed to revoke client certificate for {client_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e),
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
         except Exception as e:
             logger.error(f"Failed to revoke client certificate for {client_name}", error=str(e))
-            raise SystemOperationError(f"Certificate revocation failed: {e}")
+            return {
+                'success': False,
+                'error': f'Certificate revocation failed: {str(e)}',
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
     @audit_system_operation('openvpn_client_disconnect')
     def disconnect_client(self, client_name: str, reason: str = None) -> Dict[str, Any]:
@@ -811,11 +822,24 @@ comp-lzo
                 'timestamp': datetime.utcnow().isoformat()
             }
 
-        except SystemOperationError:
-            raise
+        except SystemOperationError as e:
+            logger.error(f"Failed to {action} OpenVPN service for {config_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e),
+                'action': action,
+                'config_name': config_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
         except Exception as e:
             logger.error(f"Failed to {action} OpenVPN service for {config_name}", error=str(e))
-            raise SystemOperationError(f"Service control failed: {e}")
+            return {
+                'success': False,
+                'error': f'Service control failed: {str(e)}',
+                'action': action,
+                'config_name': config_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
     # Keep existing methods with minimal changes
     def _check_port_listening(self, port: int) -> bool:
