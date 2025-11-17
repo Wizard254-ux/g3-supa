@@ -677,14 +677,17 @@ comp-lzo
         try:
             clients = []
             keys_dir = f"{self.easy_rsa_dir}/pki/private"
+
             certs_dir = f"{self.easy_rsa_dir}/pki/issued"
 
             if not os.path.exists(keys_dir):
+                logger.error("Keys directory not found")
                 return clients
             # List all client certificate files
             for file in os.listdir(certs_dir):
                 if file.endswith('.crt') and file.startswith('f2net_') and file not in ['f2net_server.crt',
                                                                                         'f2net_ca.crt']:
+                    logger.info(f"Processing certificate file: {file}")
                     full_client_name = file[:-4]  # Remove .crt extension
                     client_name = full_client_name.replace('f2net_', '', 1)  # Remove f2net_ prefix
 
