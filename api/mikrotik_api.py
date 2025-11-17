@@ -80,10 +80,7 @@ def device_config(device_name):
 
         # Check if client exists
         clients = vpn_manager.get_client_list()
-        logger.info(f"Retrieved client list: {clients}")
         client = next((c for c in clients if c['name'] == client_name), None)
-
-
         if not client:
             return jsonify({
                 'success': False,

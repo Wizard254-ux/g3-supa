@@ -492,6 +492,22 @@ f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/clients/*
 f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/client_metadata/*
 f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/client_metadata/*
 
+# File existence checks (secure - no content exposure)
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -d /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -d /etc/openvpn/*
+
 # OpenSSL operations
 f2net_isp ALL=(root) NOPASSWD: /usr/bin/openssl *
 
