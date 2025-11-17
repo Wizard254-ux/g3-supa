@@ -364,11 +364,11 @@ class OpenVPNManager:
             with open(self.ca_cert, 'r') as f:
                 ca_content = f.read()
             cert_content = self.cert_service.read_certificate(f"f2net_{client_name}")
-
+            key_content =  self.cert_service.read_certificate_key(f"f2net_{client_name}")
             # with open(f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt", 'r') as f:
             #     cert_content = f.read()
-            with open(f"{self.easy_rsa_dir}/pki/private/f2net_{client_name}.key", 'r') as f:
-                key_content = f.read()
+            # with open(f"{self.easy_rsa_dir}/pki/private/f2net_{client_name}.key", 'r') as f:
+            #     key_content = f.read()
 
             # Get server configuration
             temp = self.parse_client_template()

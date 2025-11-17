@@ -229,6 +229,21 @@ class CertificateService(SystemService):
             raise SystemOperationError(f"Failed to read certificate {cert_name}: {stderr}")
 
         return stdout
+    def read_certificate_key(self, key_name: str) -> str:
+        """Read certificate content securely"""
+        if not self._validate_input(key_name, r'^f2net_[a-zA-Z0-9_-]+$'):
+            raise SystemOperationError("Invalid certificate name format")
+
+        key_path = f"/etc/openvpn/server/easy-rsa/pki/private/{key_name}.key"
+
+        success, stdout, stderr = self._run_command([
+            '/usr/bin/sudo', '/usr/bin/cat', key_path
+        ])
+
+        if not success:
+            raise SystemOperationError(f"Failed to read certificate ->  {key_name}: {stderr}")
+
+        return stdout
 
     def generate_client_cert(self, cert_name: str) -> Dict:
         """Generate client certificate"""
