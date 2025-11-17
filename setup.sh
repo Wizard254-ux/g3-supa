@@ -1681,6 +1681,12 @@ fi
         find /etc/openvpn/server -type f -exec chmod 644 {} \;
         print_status "Set all files to 644 (rw-r--r--)"
 
+        # Make easyrsa and other scripts executable
+        if [[ -f "/etc/openvpn/server/easy-rsa/easyrsa" ]]; then
+            chmod 755 /etc/openvpn/server/easy-rsa/easyrsa
+            print_status "Set easyrsa script as executable (755)"
+        fi
+
         # Secure all private keys - keep ownership but restrict permissions
         find /etc/openvpn/server -type f -name "*.key" -exec chmod 600 {} \;
         print_status "Secured all private keys to 600 (rw-------)"
