@@ -51,7 +51,7 @@ class OpenVPNManager:
         """Initialize the service with Flask app"""
         self.app = app
         self.config_dir = app.config.get('OPENVPN_CONFIG_DIR', '/etc/openvpn')
-        self.easy_rsa_dir = app.config.get('OPENVPN_CONFIG_DIR', '/etc/openvpn/server/easy-rsa')
+        self.easy_rsa_dir = app.config.get('OPENVPN_EASY_RSA_DIR', '/etc/openvpn/server/easy-rsa')
         self.client_config_dir = app.config.get('OPENVPN_CLIENT_CONFIG_DIR', '/etc/openvpn/clients')
         self.ca_cert = app.config.get('OPENVPN_CA_CERT', '/etc/openvpn/server/ca.crt')
         self.server_cert = app.config.get('OPENVPN_SERVER_CERT', '/etc/openvpn/server/server.crt')
