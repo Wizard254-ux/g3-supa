@@ -65,6 +65,9 @@ class OpenVPNManager:
 
         logger.info("Enhanced OpenVPN Manager initialized with SystemService integration")
 
+    def _run_command(self, *args, **kwargs):
+        return self.cert_service._run_command(*args, **kwargs)
+
     def _ensure_directories(self):
         """Ensure required directories exist"""
         try:
@@ -74,8 +77,10 @@ class OpenVPNManager:
             Path(f"{self.config_dir}/ccd").mkdir(parents=True, exist_ok=True)
             Path(f"{self.config_dir}/client_metadata").mkdir(parents=True, exist_ok=True)
         except PermissionError as e:
-            logger.error("Permission denied creating OpenVPN directories. Run fix_openvpn_permissions.sh as root.", error=str(e))
-            raise SystemOperationError(f"Directory creation failed due to permissions. Please ensure the application user has write access to {self.client_config_dir} and {self.config_dir}/client_metadata")
+            logger.error("Permission denied creating OpenVPN directories. Run fix_openvpn_permissions.sh as root.",
+                         error=str(e))
+            raise SystemOperationError(
+                f"Directory creation failed due to permissions. Please ensure the application user has write access to {self.client_config_dir} and {self.config_dir}/client_metadata")
         except Exception as e:
             logger.error("Failed to create OpenVPN directories", error=str(e))
             raise SystemOperationError(f"Directory creation failed: {e}")
@@ -325,16 +330,55 @@ class OpenVPNManager:
         except Exception as e:
             logger.warning(f"Failed to store client metadata for {client_name}", error=str(e))
 
+    # def _load_client_metadata(self, client_name: str) -> Dict[str, Any]:
+    #     """Load client metadata"""
+    #     try:
+    #         metadata_file = f"{self.config_dir}/client_metadata/f2net_{client_name}.json"
+    #         if os.path.exists(metadata_file):
+    #             with open(metadata_file, 'r') as f:
+    #                 return json.load(f)
+    #         return {}
+    #     except Exception as e:
+    #         logger.warning(f"Failed to load client metadata for {client_name}", error=str(e))
+    #         return {}
+
     def _load_client_metadata(self, client_name: str) -> Dict[str, Any]:
-        """Load client metadata"""
+        """Load client metadata using system commands only (no os.* or open())."""
         try:
             metadata_file = f"{self.config_dir}/client_metadata/f2net_{client_name}.json"
-            if os.path.exists(metadata_file):
-                with open(metadata_file, 'r') as f:
-                    return json.load(f)
-            return {}
+
+            # Check existence with sudo test -f
+            exists, _, _ = self._run_command([
+                "/usr/bin/sudo", "/usr/bin/test", "-f", metadata_file
+            ])
+
+            if not exists:
+                return {}
+
+            # Read JSON content with sudo cat
+            success, stdout, stderr = self._run_command([
+                "/usr/bin/sudo", "/usr/bin/cat", metadata_file
+            ])
+
+            if not success:
+                logger.warning(
+                    f"Failed to read metadata file for {client_name}: {stderr}"
+                )
+                return {}
+
+            # Parse JSON
+            try:
+                return json.loads(stdout)
+            except Exception as json_error:
+                logger.warning(
+                    f"Invalid JSON metadata for {client_name}: {json_error}"
+                )
+                return {}
+
         except Exception as e:
-            logger.warning(f"Failed to load client metadata for {client_name}", error=str(e))
+            logger.warning(
+                f"Unexpected error loading metadata for {client_name}: {e}"
+            )
             return {}
 
     def _create_client_specific_config(self, client_name: str, client_ip: str):
@@ -363,8 +407,7 @@ class OpenVPNManager:
             # Read certificate files
             ca_content = self.cert_service.read_item(self.ca_cert)
             cert_content = self.cert_service.read_certificate(f"f2net_{client_name}")
-            key_content =  self.cert_service.read_certificate_key(f"f2net_{client_name}")
-
+            key_content = self.cert_service.read_certificate_key(f"f2net_{client_name}")
 
             # Get server configuration
             temp = self.parse_client_template()
@@ -672,61 +715,143 @@ comp-lzo
             logger.error(f"Management interface connection failed for {client_name}", error=str(e))
             return {'success': False, 'error': str(e)}
 
+    # def get_client_list(self) -> List[Dict[str, Any]]:
+    #     """Get enhanced list of all client certificates with metadata"""
+    #     try:
+    #         clients = []
+    #         keys_dir = f"{self.easy_rsa_dir}/pki/private"
+    #
+    #         certs_dir = f"{self.easy_rsa_dir}/pki/issued"
+    #
+    #         if not os.path.exists(keys_dir):
+    #             logger.error(f"Keys directory not found @ {keys_dir}")
+    #             return clients
+    #         # List all client certificate files
+    #         for file in os.listdir(certs_dir):
+    #             if file.endswith('.crt') and file.startswith('f2net_') and file not in ['f2net_server.crt',
+    #                                                                                     'f2net_ca.crt']:
+    #                 logger.info(f"Processing certificate file: {file}")
+    #                 full_client_name = file[:-4]  # Remove .crt extension
+    #                 client_name = full_client_name.replace('f2net_', '', 1)  # Remove f2net_ prefix
+    #
+    #                 cert_path = f"{certs_dir}/{file}"
+    #                 key_path = f"{keys_dir}/{full_client_name}.key"
+    #                 config_path = f"{self.client_config_dir}/{full_client_name}.ovpn"
+    #                 ccd_path = f"{self.config_dir}/ccd/{full_client_name}"
+    #
+    #                 # Get certificate info
+    #                 cert_info = self._get_certificate_info(cert_path)
+    #
+    #                 # Get client metadata
+    #                 metadata = self._load_client_metadata(client_name)
+    #
+    #                 # Get connection info
+    #                 connection_info = self._get_client_connection_info(full_client_name)
+    #
+    #                 clients.append({
+    #                     'name': client_name,
+    #                     'full_name': full_client_name,
+    #                     'certificate_file': cert_path,
+    #                     'key_file': key_path if os.path.exists(key_path) else None,
+    #                     'config_file': config_path if os.path.exists(config_path) else None,
+    #                     'ccd_file': ccd_path if os.path.exists(ccd_path) else None,
+    #                     'created_at': cert_info.get('not_before'),
+    #                     'expires_at': cert_info.get('not_after'),
+    #                     'days_until_expiry': self._calculate_days_until_expiry(cert_info.get('not_after')),
+    #                     'is_valid': cert_info.get('is_valid', False),
+    #                     'serial_number': cert_info.get('serial_number'),
+    #                     'is_connected': connection_info.get('is_connected', False),
+    #                     'connection_info': connection_info,
+    #                     'metadata': metadata,
+    #                     'email': metadata.get('email'),
+    #                     'assigned_ip': metadata.get('assigned_ip'),
+    #                     'created_by': metadata.get('created_by'),
+    #                     'status': metadata.get('status', 'unknown')
+    #                 })
+    #             else:
+    #                 print(file)
+    #
+    #         return sorted(clients, key=lambda x: x['name'])
+    #
+    #     except Exception as e:
+    #         logger.error("Failed to get enhanced client list", error=str(e))
+    #         return []
+
     def get_client_list(self) -> List[Dict[str, Any]]:
-        """Get enhanced list of all client certificates with metadata"""
+        """Get enhanced list of all client certificates with metadata using system service commands only"""
         try:
             clients = []
+            certs_dir = f"{self.easy_rsa_dir}/pki/issued"
             keys_dir = f"{self.easy_rsa_dir}/pki/private"
 
-            certs_dir = f"{self.easy_rsa_dir}/pki/issued"
+            # List cert files via sudo
+            success, stdout, stderr = self._run_command([
+                "/usr/bin/sudo", "/usr/bin/ls", certs_dir
+            ])
 
-            if not os.path.exists(keys_dir):
-                logger.error(f"Keys directory not found @ {keys_dir}")
+            if not success:
+                logger.error(f"Unable to list certificates in {certs_dir}: {stderr}")
                 return clients
-            # List all client certificate files
-            for file in os.listdir(certs_dir):
-                if file.endswith('.crt') and file.startswith('f2net_') and file not in ['f2net_server.crt',
-                                                                                        'f2net_ca.crt']:
-                    logger.info(f"Processing certificate file: {file}")
-                    full_client_name = file[:-4]  # Remove .crt extension
-                    client_name = full_client_name.replace('f2net_', '', 1)  # Remove f2net_ prefix
 
-                    cert_path = f"{certs_dir}/{file}"
-                    key_path = f"{keys_dir}/{full_client_name}.key"
-                    config_path = f"{self.client_config_dir}/{full_client_name}.ovpn"
-                    ccd_path = f"{self.config_dir}/ccd/{full_client_name}"
+            cert_files = stdout.split()
 
-                    # Get certificate info
-                    cert_info = self._get_certificate_info(cert_path)
+            # Process only client certificates
+            for file in cert_files:
+                if not (file.endswith(".crt") and
+                        file.startswith("f2net_") and
+                        file not in ["f2net_server.crt", "f2net_ca.crt"]):
+                    continue
 
-                    # Get client metadata
-                    metadata = self._load_client_metadata(client_name)
+                logger.info(f"Processing certificate file: {file}")
 
-                    # Get connection info
-                    connection_info = self._get_client_connection_info(full_client_name)
+                full_client_name = file[:-4]  # remove .crt
+                client_name = full_client_name.replace("f2net_", "", 1)
 
-                    clients.append({
-                        'name': client_name,
-                        'full_name': full_client_name,
-                        'certificate_file': cert_path,
-                        'key_file': key_path if os.path.exists(key_path) else None,
-                        'config_file': config_path if os.path.exists(config_path) else None,
-                        'ccd_file': ccd_path if os.path.exists(ccd_path) else None,
-                        'created_at': cert_info.get('not_before'),
-                        'expires_at': cert_info.get('not_after'),
-                        'days_until_expiry': self._calculate_days_until_expiry(cert_info.get('not_after')),
-                        'is_valid': cert_info.get('is_valid', False),
-                        'serial_number': cert_info.get('serial_number'),
-                        'is_connected': connection_info.get('is_connected', False),
-                        'connection_info': connection_info,
-                        'metadata': metadata,
-                        'email': metadata.get('email'),
-                        'assigned_ip': metadata.get('assigned_ip'),
-                        'created_by': metadata.get('created_by'),
-                        'status': metadata.get('status', 'unknown')
-                    })
-                else:
-                    print(file)
+                cert_path = f"{certs_dir}/{file}"
+                key_path = f"{keys_dir}/{full_client_name}.key"
+                config_path = f"{self.client_config_dir}/{full_client_name}.ovpn"
+                ccd_path = f"{self.config_dir}/ccd/{full_client_name}"
+
+                # Check file existence using `sudo test -f`
+                def file_exists(path: str) -> bool:
+                    return self._run_command([
+                        "/usr/bin/sudo", "/usr/bin/test", "-f", path
+                    ])[0]
+
+                key_exists = file_exists(key_path)
+                config_exists = file_exists(config_path)
+                ccd_exists = file_exists(ccd_path)
+
+                # Certificate info
+                cert_info = self._get_certificate_info(cert_path)
+
+                # Metadata (stored elsewhere)
+                metadata = self._load_client_metadata(client_name)
+
+                # Connection info
+                connection_info = self._get_client_connection_info(full_client_name)
+
+                # Append entry
+                clients.append({
+                    'name': client_name,
+                    'full_name': full_client_name,
+                    'certificate_file': cert_path,
+                    'key_file': key_path if key_exists else None,
+                    'config_file': config_path if config_exists else None,
+                    'ccd_file': ccd_path if ccd_exists else None,
+                    'created_at': cert_info.get('not_before'),
+                    'expires_at': cert_info.get('not_after'),
+                    'days_until_expiry': self._calculate_days_until_expiry(cert_info.get('not_after')),
+                    'is_valid': cert_info.get('is_valid', False),
+                    'serial_number': cert_info.get('serial_number'),
+                    'is_connected': connection_info.get('is_connected', False),
+                    'connection_info': connection_info,
+                    'metadata': metadata,
+                    'email': metadata.get('email'),
+                    'assigned_ip': metadata.get('assigned_ip'),
+                    'created_by': metadata.get('created_by'),
+                    'status': metadata.get('status', 'unknown')
+                })
 
             return sorted(clients, key=lambda x: x['name'])
 
