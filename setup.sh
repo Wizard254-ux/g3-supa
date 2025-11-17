@@ -1665,8 +1665,72 @@ else
 	esac
 fi
 
-    print_success "OpenVPN prepared (manual configuration required)"
-    print_warning "Don't forget to initialize PKI and generate certificates"
+    # Set proper permissions for app to read certificates (but not private keys)
+    if [[ -d "/etc/openvpn/server" ]]; then
+        print_status "Setting OpenVPN certificate permissions for app access..."
+
+        # Public certificates - app needs to read these to generate client configs
+        if [[ -f "/etc/openvpn/server/ca.crt" ]]; then
+            chmod 644 /etc/openvpn/server/ca.crt
+            print_status "Set readable permissions on ca.crt"
+        fi
+
+        if [[ -f "/etc/openvpn/server/server.crt" ]]; then
+            chmod 644 /etc/openvpn/server/server.crt
+            print_status "Set readable permissions on server.crt"
+        fi
+
+        if [[ -f "/etc/openvpn/server/dh.pem" ]]; then
+            chmod 644 /etc/openvpn/server/dh.pem
+            print_status "Set readable permissions on dh.pem"
+        fi
+
+        if [[ -f "/etc/openvpn/server/tc.key" ]]; then
+            chmod 644 /etc/openvpn/server/tc.key
+            print_status "Set readable permissions on tc.key (TLS-Crypt)"
+        fi
+
+        if [[ -f "/etc/openvpn/server/client-common.txt" ]]; then
+            chmod 644 /etc/openvpn/server/client-common.txt
+            print_status "Set readable permissions on client-common.txt"
+        fi
+
+        # Private keys - MUST remain root-only for security
+        if [[ -f "/etc/openvpn/server/ca.key" ]]; then
+            chmod 600 /etc/openvpn/server/ca.key
+            chown root:root /etc/openvpn/server/ca.key
+            print_status "Secured ca.key (root-only)"
+        fi
+
+        if [[ -f "/etc/openvpn/server/server.key" ]]; then
+            chmod 600 /etc/openvpn/server/server.key
+            chown root:root /etc/openvpn/server/server.key
+            print_status "Secured server.key (root-only)"
+        fi
+
+        # Make easy-rsa PKI directory accessible for reading client certs
+        if [[ -d "/etc/openvpn/server/easy-rsa/pki" ]]; then
+            chmod 755 /etc/openvpn/server/easy-rsa
+            chmod 755 /etc/openvpn/server/easy-rsa/pki
+            chmod 755 /etc/openvpn/server/easy-rsa/pki/issued
+            chmod 755 /etc/openvpn/server/easy-rsa/pki/inline
+            chmod 755 /etc/openvpn/server/easy-rsa/pki/inline/private 2>/dev/null || true
+
+            # Make client certificates readable (they're in pki/issued/)
+            find /etc/openvpn/server/easy-rsa/pki/issued -name "*.crt" -exec chmod 644 {} \; 2>/dev/null || true
+
+            # Keep private keys secure
+            chmod 700 /etc/openvpn/server/easy-rsa/pki/private 2>/dev/null || true
+            find /etc/openvpn/server/easy-rsa/pki/private -name "*.key" -exec chmod 600 {} \; 2>/dev/null || true
+
+            print_status "Set PKI directory permissions"
+        fi
+
+        print_success "OpenVPN certificate permissions configured"
+    fi
+
+    print_success "OpenVPN installation and configuration completed"
+    print_warning "Remember to update OPENVPN_SERVER_HOST in your .env file with your server's public IP/hostname"
 }
 
 setup_freeradius() {
