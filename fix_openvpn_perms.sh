@@ -19,12 +19,12 @@ if [[ -d "/etc/openvpn/server" ]]; then
     echo "Setting file permissions..."
     find /etc/openvpn/server -type f -exec chmod 644 {} \;
 
-    # Make easyrsa and other scripts executable
-    echo "Making scripts executable..."
-    if [[ -f "/etc/openvpn/server/easy-rsa/easyrsa" ]]; then
-        chmod 755 /etc/openvpn/server/easy-rsa/easyrsa
-        echo "✓ Set easyrsa script as executable"
-    fi
+#    # Make easyrsa and other scripts executable
+#    echo "Making scripts executable..."
+#    if [[ -f "/etc/openvpn/server/easy-rsa/easyrsa" ]]; then
+#        chmod 755 /etc/openvpn/server/easy-rsa/easyrsa
+#        echo "✓ Set easyrsa script as executable"
+#    fi
 
     # Secure all private keys - keep ownership with app user but restrict permissions
     echo "Securing private keys..."
