@@ -681,7 +681,7 @@ comp-lzo
             certs_dir = f"{self.easy_rsa_dir}/pki/issued"
 
             if not os.path.exists(keys_dir):
-                logger.error("Keys directory not found")
+                logger.error(f"Keys directory not found @ {keys_dir}")
                 return clients
             # List all client certificate files
             for file in os.listdir(certs_dir):
