@@ -245,6 +245,17 @@ class CertificateService(SystemService):
 
         return stdout
 
+    def read_item(self, item_path: str) -> str:
+        """Read certificate content securely"""
+        success, stdout, stderr = self._run_command([
+            '/usr/bin/sudo', '/usr/bin/cat',item_path
+        ])
+
+        if not success:
+            raise SystemOperationError(f"Failed to item @  {item_path}: {stderr}")
+
+        return stdout
+
     def generate_client_cert(self, cert_name: str) -> Dict:
         """Generate client certificate"""
         if not self._validate_input(cert_name, r'^f2net_[a-zA-Z0-9_-]+$'):
