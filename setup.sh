@@ -1665,98 +1665,33 @@ else
 	esac
 fi
 
-    # Set proper permissions for app to read certificates (but not private keys)
+    # Set proper permissions for app to have full ownership
     if [[ -d "/etc/openvpn/server" ]]; then
-        print_status "Setting OpenVPN certificate permissions for app access..."
+        print_status "Setting OpenVPN full ownership recursively for $APP_USER..."
 
-        # Public certificates - app needs to read these to generate client configs
-        # Set group ownership to app user and allow group read
-        if [[ -f "/etc/openvpn/server/ca.crt" ]]; then
-            chown root:$APP_USER /etc/openvpn/server/ca.crt
-            chmod 640 /etc/openvpn/server/ca.crt
-            print_status "Set permissions on ca.crt (readable by $APP_USER group)"
+        # Recursively set full ownership to app user on entire server directory
+        chown -R $APP_USER:$APP_USER /etc/openvpn/server
+        print_status "Set full ownership recursively to $APP_USER:$APP_USER"
+
+        # Recursively set all directories to be fully accessible (755)
+        find /etc/openvpn/server -type d -exec chmod 755 {} \;
+        print_status "Set all directories to 755 (rwxr-xr-x)"
+
+        # Recursively set all files to be readable/writable by app user (644)
+        find /etc/openvpn/server -type f -exec chmod 644 {} \;
+        print_status "Set all files to 644 (rw-r--r--)"
+
+        # Secure all private keys - keep ownership but restrict permissions
+        find /etc/openvpn/server -type f -name "*.key" -exec chmod 600 {} \;
+        print_status "Secured all private keys to 600 (rw-------)"
+
+        # Secure private key directory
+        if [[ -d "/etc/openvpn/server/easy-rsa/pki/private" ]]; then
+            chmod 700 /etc/openvpn/server/easy-rsa/pki/private
+            print_status "Secured private key directory to 700 (rwx------)"
         fi
 
-        if [[ -f "/etc/openvpn/server/server.crt" ]]; then
-            chown root:$APP_USER /etc/openvpn/server/server.crt
-            chmod 640 /etc/openvpn/server/server.crt
-            print_status "Set permissions on server.crt (readable by $APP_USER group)"
-        fi
-
-        if [[ -f "/etc/openvpn/server/dh.pem" ]]; then
-            chown root:$APP_USER /etc/openvpn/server/dh.pem
-            chmod 640 /etc/openvpn/server/dh.pem
-            print_status "Set permissions on dh.pem (readable by $APP_USER group)"
-        fi
-
-        if [[ -f "/etc/openvpn/server/tc.key" ]]; then
-            chown root:$APP_USER /etc/openvpn/server/tc.key
-            chmod 640 /etc/openvpn/server/tc.key
-            print_status "Set permissions on tc.key (readable by $APP_USER group)"
-        fi
-
-        if [[ -f "/etc/openvpn/server/client-common.txt" ]]; then
-            chown root:$APP_USER /etc/openvpn/server/client-common.txt
-            chmod 640 /etc/openvpn/server/client-common.txt
-            print_status "Set permissions on client-common.txt (readable by $APP_USER group)"
-        fi
-
-        # Private keys - MUST remain root-only for security
-        if [[ -f "/etc/openvpn/server/ca.key" ]]; then
-            chmod 600 /etc/openvpn/server/ca.key
-            chown root:root /etc/openvpn/server/ca.key
-            print_status "Secured ca.key (root-only)"
-        fi
-
-        if [[ -f "/etc/openvpn/server/server.key" ]]; then
-            chmod 600 /etc/openvpn/server/server.key
-            chown root:root /etc/openvpn/server/server.key
-            print_status "Secured server.key (root-only)"
-        fi
-
-        # Make easy-rsa PKI directory accessible for reading client certs
-        if [[ -d "/etc/openvpn/server/easy-rsa/pki" ]]; then
-            # Set directory permissions to allow traversal
-            chown root:$APP_USER /etc/openvpn/server/easy-rsa
-            chmod 750 /etc/openvpn/server/easy-rsa
-
-            chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki
-            chmod 750 /etc/openvpn/server/easy-rsa/pki
-
-            if [[ -d "/etc/openvpn/server/easy-rsa/pki/issued" ]]; then
-                chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki/issued
-                chmod 750 /etc/openvpn/server/easy-rsa/pki/issued
-            fi
-
-            if [[ -d "/etc/openvpn/server/easy-rsa/pki/inline" ]]; then
-                chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki/inline
-                chmod 750 /etc/openvpn/server/easy-rsa/pki/inline
-            fi
-
-            if [[ -d "/etc/openvpn/server/easy-rsa/pki/inline/private" ]]; then
-                chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki/inline/private
-                chmod 750 /etc/openvpn/server/easy-rsa/pki/inline/private
-            fi
-
-            # Make client certificates readable by app user group
-            find /etc/openvpn/server/easy-rsa/pki/issued -name "*.crt" -exec chown root:$APP_USER {} \; 2>/dev/null || true
-            find /etc/openvpn/server/easy-rsa/pki/issued -name "*.crt" -exec chmod 640 {} \; 2>/dev/null || true
-
-            # Make inline client files readable by app user group
-            find /etc/openvpn/server/easy-rsa/pki/inline/private -name "*.inline" -exec chown root:$APP_USER {} \; 2>/dev/null || true
-            find /etc/openvpn/server/easy-rsa/pki/inline/private -name "*.inline" -exec chmod 640 {} \; 2>/dev/null || true
-
-            # Keep private keys secure (root-only)
-            if [[ -d "/etc/openvpn/server/easy-rsa/pki/private" ]]; then
-                chmod 700 /etc/openvpn/server/easy-rsa/pki/private
-                find /etc/openvpn/server/easy-rsa/pki/private -name "*.key" -exec chmod 600 {} \; 2>/dev/null || true
-                find /etc/openvpn/server/easy-rsa/pki/private -name "*.key" -exec chown root:root {} \; 2>/dev/null || true
-            fi
-
-            print_status "Set PKI directory permissions for $APP_USER group"
-        fi
-
-        print_success "OpenVPN certificate permissions configured for $APP_USER"
+        print_success "OpenVPN full ownership configured for $APP_USER (recursive)"
     fi
 
     print_success "OpenVPN installation and configuration completed"
