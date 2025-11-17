@@ -714,32 +714,41 @@ create_directories() {
     # These directories are needed by the application to store client configs
     print_status "Setting up OpenVPN directories for $APP_USER"
 
-    # Create /etc/openvpn if it doesn't exist
+    # Create /etc/openvpn if it doesn't exist and set proper permissions
     mkdir -p /etc/openvpn
+    chmod 755 /etc/openvpn
+    print_status "Created /etc/openvpn base directory"
 
     # Create clients directory
     mkdir -p /etc/openvpn/clients
     chown -R "$APP_USER:$APP_USER" /etc/openvpn/clients
-    chmod 755 /etc/openvpn/clients
-    print_status "Set permissions for /etc/openvpn/clients"
+    chmod 775 /etc/openvpn/clients
+    print_status "Set permissions for /etc/openvpn/clients (775, owned by $APP_USER)"
 
     # Create client_metadata directory
     mkdir -p /etc/openvpn/client_metadata
     chown -R "$APP_USER:$APP_USER" /etc/openvpn/client_metadata
-    chmod 755 /etc/openvpn/client_metadata
-    print_status "Set permissions for /etc/openvpn/client_metadata"
+    chmod 775 /etc/openvpn/client_metadata
+    print_status "Set permissions for /etc/openvpn/client_metadata (775, owned by $APP_USER)"
 
     # Create ccd directory if needed
     mkdir -p /etc/openvpn/ccd
     chown -R "$APP_USER:$APP_USER" /etc/openvpn/ccd
-    chmod 755 /etc/openvpn/ccd
-    print_status "Set permissions for /etc/openvpn/ccd"
+    chmod 775 /etc/openvpn/ccd
+    print_status "Set permissions for /etc/openvpn/ccd (775, owned by $APP_USER)"
 
     # Create keys directory
     mkdir -p /etc/openvpn/keys
     chown -R "$APP_USER:$APP_USER" /etc/openvpn/keys
-    chmod 755 /etc/openvpn/keys
-    print_status "Set permissions for /etc/openvpn/keys"
+    chmod 775 /etc/openvpn/keys
+    print_status "Set permissions for /etc/openvpn/keys (775, owned by $APP_USER)"
+
+    # Verify permissions were set correctly
+    if [ -w /etc/openvpn/clients ] && [ -w /etc/openvpn/client_metadata ] && [ -w /etc/openvpn/ccd ] && [ -w /etc/openvpn/keys ]; then
+        print_success "All OpenVPN directories are writable by $APP_USER"
+    else
+        print_warning "Some OpenVPN directories may not be writable. Check permissions manually."
+    fi
 
     # Set permissions
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
