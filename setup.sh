@@ -1670,29 +1670,35 @@ fi
         print_status "Setting OpenVPN certificate permissions for app access..."
 
         # Public certificates - app needs to read these to generate client configs
+        # Set group ownership to app user and allow group read
         if [[ -f "/etc/openvpn/server/ca.crt" ]]; then
-            chmod 644 /etc/openvpn/server/ca.crt
-            print_status "Set readable permissions on ca.crt"
+            chown root:$APP_USER /etc/openvpn/server/ca.crt
+            chmod 640 /etc/openvpn/server/ca.crt
+            print_status "Set permissions on ca.crt (readable by $APP_USER group)"
         fi
 
         if [[ -f "/etc/openvpn/server/server.crt" ]]; then
-            chmod 644 /etc/openvpn/server/server.crt
-            print_status "Set readable permissions on server.crt"
+            chown root:$APP_USER /etc/openvpn/server/server.crt
+            chmod 640 /etc/openvpn/server/server.crt
+            print_status "Set permissions on server.crt (readable by $APP_USER group)"
         fi
 
         if [[ -f "/etc/openvpn/server/dh.pem" ]]; then
-            chmod 644 /etc/openvpn/server/dh.pem
-            print_status "Set readable permissions on dh.pem"
+            chown root:$APP_USER /etc/openvpn/server/dh.pem
+            chmod 640 /etc/openvpn/server/dh.pem
+            print_status "Set permissions on dh.pem (readable by $APP_USER group)"
         fi
 
         if [[ -f "/etc/openvpn/server/tc.key" ]]; then
-            chmod 644 /etc/openvpn/server/tc.key
-            print_status "Set readable permissions on tc.key (TLS-Crypt)"
+            chown root:$APP_USER /etc/openvpn/server/tc.key
+            chmod 640 /etc/openvpn/server/tc.key
+            print_status "Set permissions on tc.key (readable by $APP_USER group)"
         fi
 
         if [[ -f "/etc/openvpn/server/client-common.txt" ]]; then
-            chmod 644 /etc/openvpn/server/client-common.txt
-            print_status "Set readable permissions on client-common.txt"
+            chown root:$APP_USER /etc/openvpn/server/client-common.txt
+            chmod 640 /etc/openvpn/server/client-common.txt
+            print_status "Set permissions on client-common.txt (readable by $APP_USER group)"
         fi
 
         # Private keys - MUST remain root-only for security
@@ -1710,23 +1716,47 @@ fi
 
         # Make easy-rsa PKI directory accessible for reading client certs
         if [[ -d "/etc/openvpn/server/easy-rsa/pki" ]]; then
-            chmod 755 /etc/openvpn/server/easy-rsa
-            chmod 755 /etc/openvpn/server/easy-rsa/pki
-            chmod 755 /etc/openvpn/server/easy-rsa/pki/issued
-            chmod 755 /etc/openvpn/server/easy-rsa/pki/inline
-            chmod 755 /etc/openvpn/server/easy-rsa/pki/inline/private 2>/dev/null || true
+            # Set directory permissions to allow traversal
+            chown root:$APP_USER /etc/openvpn/server/easy-rsa
+            chmod 750 /etc/openvpn/server/easy-rsa
 
-            # Make client certificates readable (they're in pki/issued/)
-            find /etc/openvpn/server/easy-rsa/pki/issued -name "*.crt" -exec chmod 644 {} \; 2>/dev/null || true
+            chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki
+            chmod 750 /etc/openvpn/server/easy-rsa/pki
 
-            # Keep private keys secure
-            chmod 700 /etc/openvpn/server/easy-rsa/pki/private 2>/dev/null || true
-            find /etc/openvpn/server/easy-rsa/pki/private -name "*.key" -exec chmod 600 {} \; 2>/dev/null || true
+            if [[ -d "/etc/openvpn/server/easy-rsa/pki/issued" ]]; then
+                chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki/issued
+                chmod 750 /etc/openvpn/server/easy-rsa/pki/issued
+            fi
 
-            print_status "Set PKI directory permissions"
+            if [[ -d "/etc/openvpn/server/easy-rsa/pki/inline" ]]; then
+                chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki/inline
+                chmod 750 /etc/openvpn/server/easy-rsa/pki/inline
+            fi
+
+            if [[ -d "/etc/openvpn/server/easy-rsa/pki/inline/private" ]]; then
+                chown root:$APP_USER /etc/openvpn/server/easy-rsa/pki/inline/private
+                chmod 750 /etc/openvpn/server/easy-rsa/pki/inline/private
+            fi
+
+            # Make client certificates readable by app user group
+            find /etc/openvpn/server/easy-rsa/pki/issued -name "*.crt" -exec chown root:$APP_USER {} \; 2>/dev/null || true
+            find /etc/openvpn/server/easy-rsa/pki/issued -name "*.crt" -exec chmod 640 {} \; 2>/dev/null || true
+
+            # Make inline client files readable by app user group
+            find /etc/openvpn/server/easy-rsa/pki/inline/private -name "*.inline" -exec chown root:$APP_USER {} \; 2>/dev/null || true
+            find /etc/openvpn/server/easy-rsa/pki/inline/private -name "*.inline" -exec chmod 640 {} \; 2>/dev/null || true
+
+            # Keep private keys secure (root-only)
+            if [[ -d "/etc/openvpn/server/easy-rsa/pki/private" ]]; then
+                chmod 700 /etc/openvpn/server/easy-rsa/pki/private
+                find /etc/openvpn/server/easy-rsa/pki/private -name "*.key" -exec chmod 600 {} \; 2>/dev/null || true
+                find /etc/openvpn/server/easy-rsa/pki/private -name "*.key" -exec chown root:root {} \; 2>/dev/null || true
+            fi
+
+            print_status "Set PKI directory permissions for $APP_USER group"
         fi
 
-        print_success "OpenVPN certificate permissions configured"
+        print_success "OpenVPN certificate permissions configured for $APP_USER"
     fi
 
     print_success "OpenVPN installation and configuration completed"
