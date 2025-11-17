@@ -30,6 +30,7 @@ class OpenVPNManager:
     def __init__(self, app=None):
         self.app = app
         self.config_dir = None
+        self.easy_rsa_dir = None
         self.client_config_dir = None
         self.ca_cert = None
         self.server_cert = None
@@ -50,6 +51,7 @@ class OpenVPNManager:
         """Initialize the service with Flask app"""
         self.app = app
         self.config_dir = app.config.get('OPENVPN_CONFIG_DIR', '/etc/openvpn')
+        self.easy_rsa_dir = app.config.get('OPENVPN_CONFIG_DIR', '/etc/openvpn/server/easy-rsa')
         self.client_config_dir = app.config.get('OPENVPN_CLIENT_CONFIG_DIR', '/etc/openvpn/clients')
         self.ca_cert = app.config.get('OPENVPN_CA_CERT', '/etc/openvpn/server/ca.crt')
         self.server_cert = app.config.get('OPENVPN_SERVER_CERT', '/etc/openvpn/server/server.crt')
@@ -241,7 +243,7 @@ class OpenVPNManager:
                 raise SystemOperationError("Invalid client IP address")
 
             # Check if client already exists
-            client_cert_path = f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt"
+            client_cert_path = f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt"
             if os.path.exists(client_cert_path):
                 raise SystemOperationError(f"Client 'f2net_{client_name}' already exists")
 
@@ -283,7 +285,7 @@ class OpenVPNManager:
                 'full_client_name': f"f2net_{client_name}",
                 'config_file': config_file_path,
                 'certificate_file': client_cert_path,
-                'key_file': f"{self.config_dir}/easy-rsa/pki/private/f2net_{client_name}.key",
+                'key_file': f"{self.easy_rsa_dir}/pki/private/f2net_{client_name}.key",
                 'config_content': config_content,
                 # 'metadata': metadata,
                 'created_at': datetime.utcnow().isoformat()
@@ -362,9 +364,9 @@ class OpenVPNManager:
             with open(self.ca_cert, 'r') as f:
                 ca_content = f.read()
 
-            with open(f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt", 'r') as f:
+            with open(f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt", 'r') as f:
                 cert_content = f.read()
-            with open(f"{self.config_dir}/easy-rsa/pki/private/f2net_{client_name}.key", 'r') as f:
+            with open(f"{self.easy_rsa_dir}/pki/private/f2net_{client_name}.key", 'r') as f:
                 key_content = f.read()
 
             # Get server configuration
@@ -436,7 +438,7 @@ comp-lzo
                 raise SystemOperationError("Invalid client name format")
 
             # Check if client exists
-            client_cert_path = f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt"
+            client_cert_path = f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt"
             if not os.path.exists(client_cert_path):
                 raise SystemOperationError(f"Client 'f2net_{client_name}' does not exist")
 
@@ -451,8 +453,8 @@ comp-lzo
 
             # Remove client files
             files_to_remove = [
-                f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt",
-                f"{self.config_dir}/easy-rsa/pki/private/f2net_{client_name}.key",
+                f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt",
+                f"{self.easy_rsa_dir}/pki/private/f2net_{client_name}.key",
                 f"{self.client_config_dir}/f2net_{client_name}.ovpn",
                 f"{self.config_dir}/ccd/f2net_{client_name}",
                 f"{self.config_dir}/client_metadata/f2net_{client_name}.json"
@@ -677,8 +679,8 @@ comp-lzo
         """Get enhanced list of all client certificates with metadata"""
         try:
             clients = []
-            keys_dir = f"{self.config_dir}/easy-rsa/pki/private"
-            certs_dir = f"{self.config_dir}/easy-rsa/pki/issued"
+            keys_dir = f"{self.easy_rsa_dir}/pki/private"
+            certs_dir = f"{self.easy_rsa_dir}/pki/issued"
 
             if not os.path.exists(keys_dir):
                 return clients
