@@ -51,10 +51,10 @@ class OpenVPNManager:
         self.app = app
         self.config_dir = app.config.get('OPENVPN_CONFIG_DIR', '/etc/openvpn')
         self.client_config_dir = app.config.get('OPENVPN_CLIENT_CONFIG_DIR', '/etc/openvpn/clients')
-        self.ca_cert = app.config.get('OPENVPN_CA_CERT', '/etc/openvpn/ca.crt')
-        self.server_cert = app.config.get('OPENVPN_SERVER_CERT', '/etc/openvpn/server.crt')
-        self.server_key = app.config.get('OPENVPN_SERVER_KEY', '/etc/openvpn/server.key')
-        self.dh_params = app.config.get('OPENVPN_DH_PARAMS', '/etc/openvpn/dh2048.pem')
+        self.ca_cert = app.config.get('OPENVPN_CA_CERT', '/etc/openvpn/server/ca.crt')
+        self.server_cert = app.config.get('OPENVPN_SERVER_CERT', '/etc/openvpn/server/server.crt')
+        self.server_key = app.config.get('OPENVPN_SERVER_KEY', '/etc/openvpn/server/server.key')
+        self.dh_params = app.config.get('OPENVPN_DH_PARAMS', '/etc/openvpn/server/dh.pem')
         self.server_ip = app.config.get('OPENVPN_SERVER_IP', '10.8.0.0')
         self.server_mask = app.config.get('OPENVPN_SERVER_MASK', '255.255.255.0')
 
