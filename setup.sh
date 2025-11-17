@@ -460,11 +460,44 @@ f2net_isp ALL=(root) NOPASSWD: /sbin/iptables *
 f2net_isp ALL=(root) NOPASSWD: /sbin/ip *
 
 # File access for reading logs and configs
+# Allow both /bin and /usr/bin paths for compatibility
 f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/client_metadata/*
 f2net_isp ALL=(root) NOPASSWD: /bin/tail /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/tail /etc/openvpn/*
 f2net_isp ALL=(root) NOPASSWD: /bin/tail /var/log/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/tail /var/log/*
 f2net_isp ALL=(root) NOPASSWD: /bin/cat /var/log/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /var/log/*
+
+# Directory listing permissions
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/client_metadata/*
+
+# OpenSSL operations
 f2net_isp ALL=(root) NOPASSWD: /usr/bin/openssl *
+
+# Journalctl for log access
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/journalctl -u openvpn@* -n * --no-pager
+f2net_isp ALL=(root) NOPASSWD: /bin/journalctl -u openvpn@* -n * --no-pager
 
 # Custom scripts (recommended approach)
 f2net_isp ALL=(root) NOPASSWD: /opt/f2net_isp/scripts/
