@@ -604,7 +604,7 @@ comp-lzo
     def parse_client_template(self):
         """Parse an OpenVPN configuration file into a structured format"""
         try:
-            config_file = self.config_dir + "/client-template.txt"
+            config_file = self.config_dir + "/client-common.txt"
             if not os.path.exists(config_file):
                 return {}
 
