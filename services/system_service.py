@@ -272,6 +272,7 @@ class CertificateService(SystemService):
         match = re.search(pattern, stderr)
         return match.group(1).strip() if match else None
 
+
     # Alternative: Reuse existing request instead of removing it
     def generate_client_cert_reuse_request(self, cert_name: str) -> Dict:
         """Generate client certificate, reusing existing request if available"""
