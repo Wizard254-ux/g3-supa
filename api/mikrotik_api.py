@@ -113,9 +113,73 @@ def device_config(device_name):
         }), 500
 
 
+@mikrotik_bp.route('/devices/status', methods=['GET'])
+@api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
+def devices_batch_status():
+    """
+    Get status of multiple MikroTik devices via OpenVPN
+    Query param: identities=device1,device2,device3
+    """
+    try:
+        # Get device identities from query parameter
+        identities_param = request.args.get('identities', '')
+        if not identities_param:
+            return jsonify({
+                'success': False,
+                'error': 'Missing identities parameter'
+            }), 400
+        
+        device_names = [name.strip() for name in identities_param.split(',') if name.strip()]
+        if not device_names:
+            return jsonify({
+                'success': False,
+                'error': 'No valid device identities provided'
+            }), 400
+        
+        # Get all connected VPN clients once
+        vpn_manager = OpenVPNManager(current_app)
+        connected_clients = vpn_manager._get_connected_clients()
+        
+        # Check each device
+        devices_status = []
+        for device_name in device_names:
+            # Look for device in connected VPN clients
+            vpn_client_name = f"f2net_{device_name}"
+            is_vpn_connected = any(client['common_name'] == vpn_client_name for client in connected_clients)
+            
+            # Get VPN connection details if connected
+            vpn_connection_info = None
+            if is_vpn_connected:
+                vpn_connection_info = next(
+                    (client for client in connected_clients if client['common_name'] == vpn_client_name), 
+                    None
+                )
+            
+            devices_status.append({
+                'device_name': device_name,
+                'vpn_connected': is_vpn_connected,
+                'vpn_connection_info': vpn_connection_info
+            })
+        
+        return jsonify({
+            'success': True,
+            'devices': devices_status,
+            'total_requested': len(device_names),
+            'total_connected': sum(1 for d in devices_status if d['vpn_connected']),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error("Failed to get batch device status", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
 @mikrotik_bp.route('/devices/<device_name>/status', methods=['GET'])
 @api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
-def device_status(device_name):
+def device_single_status(device_name):
     """
     Get status of a specific MikroTik device and check if it's connected via OpenVPN
     """
