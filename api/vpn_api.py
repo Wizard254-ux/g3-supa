@@ -97,15 +97,20 @@ def get_connected_clients():
     Get list of currently connected VPN clients
     """
     try:
+        logger.info("Starting connected clients retrieval")
         vpn_manager = OpenVPNManager(current_app)
+        logger.info("OpenVPN manager initialized")
 
         # Get connected clients directly
         connected_clients = vpn_manager._get_connected_clients()
+        logger.info(f"Retrieved {len(connected_clients)} connected clients")
 
         # Calculate bandwidth totals
         total_bytes_received = sum(c.get('bytes_received', 0) for c in connected_clients)
         total_bytes_sent = sum(c.get('bytes_sent', 0) for c in connected_clients)
+        logger.info(f"Calculated bandwidth - Received: {total_bytes_received}, Sent: {total_bytes_sent}")
 
+        logger.info("Successfully processed connected clients request")
         return jsonify({
             'success': True,
             'connected_clients': connected_clients,
