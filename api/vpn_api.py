@@ -99,10 +99,8 @@ def get_connected_clients():
     try:
         vpn_manager = OpenVPNManager(current_app)
 
-        # Get server status (includes connected clients)
-        status = vpn_manager.check_server_status()
-
-        connected_clients = status.get('client_list', [])
+        # Get connected clients directly
+        connected_clients = vpn_manager._get_connected_clients()
 
         # Calculate bandwidth totals
         total_bytes_received = sum(c.get('bytes_received', 0) for c in connected_clients)

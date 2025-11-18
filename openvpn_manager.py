@@ -29,6 +29,7 @@ class OpenVPNManager:
 
     def __init__(self, app=None):
         self.app = app
+        self.status_file = None
         self.config_dir = None
         self.easy_rsa_dir = None
         self.client_config_dir = None
@@ -50,6 +51,7 @@ class OpenVPNManager:
     def init_app(self, app):
         """Initialize the service with Flask app"""
         self.app = app
+        self.status_file = app.config.get('OPENVPN_STATUS_FILE', '/var/log/openvpn/status.log')
         self.config_dir = app.config.get('OPENVPN_CONFIG_DIR', '/etc/openvpn')
         self.easy_rsa_dir = app.config.get('OPENVPN_EASY_RSA_DIR', '/etc/openvpn/server/easy-rsa')
         self.client_config_dir = app.config.get('OPENVPN_CLIENT_CONFIG_DIR', '/etc/openvpn/clients')
@@ -983,7 +985,8 @@ comp-lzo
     def _get_connected_clients(self) -> List[Dict[str, Any]]:
         """Get list of connected VPN clients (enhanced version)"""
         try:
-            status_file = f"{self.config_dir}/openvpn-status.log"
+            # Updated to use correct path for OpenVPN 2.6 status file
+            status_file = f"{self.status_file}"
 
             if not os.path.exists(status_file):
                 return []
@@ -993,30 +996,22 @@ comp-lzo
             with open(status_file, 'r') as f:
                 lines = f.readlines()
 
-            # Parse OpenVPN status file
-            in_client_section = False
-
+            # Parse OpenVPN 2.6 status file format
+            # Format: CLIENT_LIST,Common Name,Real Address,Virtual Address,Virtual IPv6,Bytes Received,Bytes Sent,Connected Since,...
             for line in lines:
                 line = line.strip()
 
-                if line.startswith('Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since'):
-                    in_client_section = True
-                    continue
-
-                if line.startswith('ROUTING TABLE'):
-                    in_client_section = False
-                    break
-
-                if in_client_section and line and not line.startswith('TITLE') and ',' in line:
+                # Look for CLIENT_LIST entries (OpenVPN 2.6 format)
+                if line.startswith('CLIENT_LIST,'):
                     parts = line.split(',')
-                    if len(parts) >= 5:
+                    if len(parts) >= 8:
                         clients.append({
-                            'common_name': parts[0],
-                            'real_address': parts[1],
-                            'bytes_received': int(parts[2]) if parts[2].isdigit() else 0,
-                            'bytes_sent': int(parts[3]) if parts[3].isdigit() else 0,
-                            'connected_since': parts[4],
-                            'virtual_address': self._get_client_virtual_ip(parts[0])
+                            'common_name': parts[1],
+                            'real_address': parts[2],
+                            'virtual_address': parts[3],
+                            'bytes_received': int(parts[5]) if parts[5].isdigit() else 0,
+                            'bytes_sent': int(parts[6]) if parts[6].isdigit() else 0,
+                            'connected_since': parts[7],
                         })
 
             return clients
@@ -1026,22 +1021,25 @@ comp-lzo
             return []
 
     def _get_client_virtual_ip(self, common_name: str) -> str:
-        """Get virtual IP address for a client"""
+        """Get virtual IP address for a client (OpenVPN 2.6 format)"""
         try:
-            status_file = f"{self.config_dir}/openvpn-status.log"
+            # Updated to use correct path for OpenVPN 2.6 status file
+            status_file = f"{self.status_file}"
+
+            if not os.path.exists(status_file):
+                return 'Unknown'
 
             with open(status_file, 'r') as f:
-                content = f.read()
+                lines = f.readlines()
 
-            # Find virtual IP in routing table section
-            routing_section = content.split('ROUTING TABLE')[1].split('GLOBAL STATS')[
-                0] if 'ROUTING TABLE' in content else ''
-
-            for line in routing_section.split('\n'):
-                if common_name in line and ',' in line:
+            # Parse OpenVPN 2.6 ROUTING_TABLE format
+            # Format: ROUTING_TABLE,Virtual Address,Common Name,Real Address,Last Ref,Last Ref (time_t)
+            for line in lines:
+                line = line.strip()
+                if line.startswith('ROUTING_TABLE,'):
                     parts = line.split(',')
-                    if len(parts) >= 2:
-                        return parts[0]
+                    if len(parts) >= 3 and parts[2] == common_name:
+                        return parts[1]  # Virtual Address is field 1
 
             return 'Unknown'
 
