@@ -90,7 +90,7 @@ def get_clients():
         })
 
 
-@vpn_bp.route('/clients/connected', methods=['GET'])
+@vpn_bp.route('/clients/connected-test', methods=['GET'])
 @api_endpoint(require_auth=True, require_json=False, cache_timeout=0)
 def get_connected_clients():
     """
