@@ -98,11 +98,14 @@ def get_connected_clients():
     """
     try:
         logger.info("Starting connected clients retrieval")
+        print("DEBUG: get_connected_clients endpoint called")
         vpn_manager = OpenVPNManager(current_app)
         logger.info("OpenVPN manager initialized")
 
         # Get connected clients directly
+        print("DEBUG: About to call _get_connected_clients")
         connected_clients = vpn_manager._get_connected_clients()
+        print(f"DEBUG: _get_connected_clients returned {len(connected_clients)} clients")
         logger.info(f"Retrieved {len(connected_clients)} connected clients")
 
         # Calculate bandwidth totals

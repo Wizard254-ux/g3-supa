@@ -95,8 +95,8 @@ class OpenVPNManager:
             if not SecurityValidator.validate_config_name(f"f2net_{config_name}"):
                 raise SystemOperationError("Invalid config name format")
 
-            # Get service status using SystemService
-            status_result = self.openvpn_service.get_service_status(f"f2net_{config_name}")
+            # Get service status using SystemService  
+            status_result = self.openvpn_service.get_service_status(f"openvpn-server@{config_name}")
 
             # Check if OpenVPN process is listening
             listening = self._check_port_listening(1194)
