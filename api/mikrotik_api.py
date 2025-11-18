@@ -117,42 +117,73 @@ def device_config(device_name):
 @api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
 def device_status(device_name):
     """
-    Get status of a specific MikroTik device
+    Get status of a specific MikroTik device and check if it's connected via OpenVPN
     """
     try:
+        # Check if device is connected to OpenVPN server
+        vpn_manager = OpenVPNManager(current_app)
+        connected_clients = vpn_manager._get_connected_clients()
+        
+        # Look for device in connected VPN clients (with f2net_ prefix)
+        vpn_client_name = f"f2net_{device_name}"
+        is_vpn_connected = any(client['common_name'] == vpn_client_name for client in connected_clients)
+        
+        # Get VPN connection details if connected
+        vpn_connection_info = None
+        if is_vpn_connected:
+            vpn_connection_info = next(
+                (client for client in connected_clients if client['common_name'] == vpn_client_name), 
+                None
+            )
+        
         mikrotik_service = MikroTikService(current_app)
-
-        # Check if device exists
-        logger.info(f"Checking status for device: {device_name}")
-        logger.info(f"Devices: {mikrotik_service.devices}")
-        if device_name not in mikrotik_service.devices:
-            return jsonify({
-                'success': False,
-                'error': f'Device "{device_name}" not found'
-            }), 404
-
-        # Check connection
-        is_connected = mikrotik_service.check_connection(device_name)
+        
+        # Check if device exists in MikroTik config (optional)
+        mikrotik_configured = device_name in mikrotik_service.devices
+        
+        # Check MikroTik API connection (only if configured)
+        mikrotik_api_connected = False
+        if mikrotik_configured:
+            mikrotik_api_connected = mikrotik_service.check_connection(device_name)
 
         response_data = {
             'device_name': device_name,
-            'connected': is_connected,
+            'vpn_connected': is_vpn_connected,
+            'mikrotik_configured': mikrotik_configured,
+            'mikrotik_api_connected': mikrotik_api_connected,
+            'vpn_connection_info': vpn_connection_info,
             'timestamp': datetime.utcnow().isoformat()
         }
 
-        if is_connected:
-            # Get detailed system information
-            system_resources = mikrotik_service.get_system_resources(device_name)
-            interface_stats = mikrotik_service.get_interface_stats(device_name)
-            active_users = mikrotik_service.get_all_active_users(device_name)
+        # Get MikroTik details only if both VPN connected and MikroTik API accessible
+        if is_vpn_connected and mikrotik_api_connected:
+            # Get detailed system information with individual error handling
+            try:
+                system_resources = mikrotik_service.get_system_resources(device_name)
+                response_data['system_resources'] = system_resources
+            except Exception as e:
+                logger.warning(f"Failed to get system resources for {device_name}", error=str(e))
+                response_data['system_resources'] = {}
 
-            response_data.update({
-                'system_resources': system_resources,
-                'interface_stats': interface_stats,
-                'active_users_count': len(active_users),
-                'active_users': active_users[:10] if len(active_users) > 10 else active_users
-                # Limit to 10 for performance
-            })
+            try:
+                interface_stats = mikrotik_service.get_interface_stats(device_name)
+                response_data['interface_stats'] = interface_stats
+            except Exception as e:
+                logger.warning(f"Failed to get interface stats for {device_name}", error=str(e))
+                response_data['interface_stats'] = []
+
+            try:
+                active_users = mikrotik_service.get_all_active_users(device_name)
+                response_data.update({
+                    'active_users_count': len(active_users),
+                    'active_users': active_users[:10] if len(active_users) > 10 else active_users
+                })
+            except Exception as e:
+                logger.warning(f"Failed to get active users for {device_name}", error=str(e))
+                response_data.update({
+                    'active_users_count': 0,
+                    'active_users': []
+                })
 
         return jsonify({
             'success': True,
