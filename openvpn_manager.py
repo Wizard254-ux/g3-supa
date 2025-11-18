@@ -988,6 +988,7 @@ comp-lzo
             # Updated to use correct path for OpenVPN 2.6 status file
             status_file = f"{self.status_file}"
             logger.info(f"Checking status file: {status_file}")
+            print(f"DEBUG: Checking status file: {status_file}")
 
             if not os.path.exists(status_file):
                 logger.warning(f"Status file does not exist: {status_file}")
@@ -999,7 +1000,8 @@ comp-lzo
             with open(status_file, 'r') as f:
                 lines = f.readlines()
             
-            logger.info(f"Read {lines} lines from status file")
+            logger.info(f"Read {len(lines)} lines from status file")
+            print(f"DEBUG: Read {lines} lines from status file")
 
             # Parse OpenVPN 2.6 status file format
             # Format: CLIENT_LIST,Common Name,Real Address,Virtual Address,Virtual IPv6,Bytes Received,Bytes Sent,Connected Since,...
@@ -1023,6 +1025,7 @@ comp-lzo
                         })
 
             logger.info(f"Parsed {len(clients)} connected clients from status file")
+            print(f"DEBUG: Parsed {len(clients)} connected clients from status file")
             return clients
 
         except Exception as e:
