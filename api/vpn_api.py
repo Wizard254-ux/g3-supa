@@ -91,7 +91,7 @@ def get_clients():
 
 
 @vpn_bp.route('/clients/connected', methods=['GET'])
-@api_endpoint(require_auth=True, require_json=False, cache_timeout=10)
+@api_endpoint(require_auth=True, require_json=False, cache_timeout=0)
 def get_connected_clients():
     """
     Get list of currently connected VPN clients
