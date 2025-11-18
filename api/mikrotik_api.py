@@ -123,6 +123,8 @@ def device_status(device_name):
         mikrotik_service = MikroTikService(current_app)
 
         # Check if device exists
+        logger.info(f"Checking status for device: {device_name}")
+        logger.info(f"Devices: {mikrotik_service.devices}")
         if device_name not in mikrotik_service.devices:
             return jsonify({
                 'success': False,
