@@ -992,6 +992,9 @@ comp-lzo
 
             if not os.path.exists(status_file):
                 logger.warning(f"Status file does not exist: {status_file}")
+                print(f"DEBUG: Status file missing: {status_file}")
+                # Check if OpenVPN is actually running
+                print(f"DEBUG: Checking if OpenVPN process exists")
                 return []
 
             clients = []
