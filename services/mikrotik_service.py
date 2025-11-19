@@ -858,47 +858,72 @@ class MikroTikService:
             bridge_name = 'f2net_bridge'
             pool_name = 'f2net_pool'
             
-            # 1. Create bridge
+            # 1. Create bridge - Fixed logic
             bridge_interface = api.path('/interface/bridge')
-            existing_bridge = list(bridge_interface.select('name').where('name', bridge_name))
+            try:
+                # Get all bridges first
+                all_bridges = list(bridge_interface.select('name'))
+                bridge_names = [b.get('name', '') for b in all_bridges]
+                logger.info(f"Existing bridges: {bridge_names}")
+                
+                if bridge_name not in bridge_names:
+                    bridge_interface.add(
+                        name=bridge_name,
+                        **{'auto-mac': 'no'},
+                        **{'admin-mac': '00:00:00:00:00:00'}
+                    )
+                    setup_results.append("Bridge created")
+                    logger.info(f"Created bridge: {bridge_name}")
+                else:
+                    setup_results.append("Bridge already exists")
+                    logger.info(f"Bridge {bridge_name} already exists")
+            except Exception as bridge_error:
+                logger.error(f"Bridge creation error: {str(bridge_error)}")
+                setup_results.append(f"Bridge error: {str(bridge_error)}")
             
-            if not existing_bridge:
-                bridge_interface.add(
-                    name=bridge_name,
-                    **{'auto-mac': 'no'},
-                    **{'admin-mac': '00:00:00:00:00:00'}
-                )
-                setup_results.append("Bridge created")
-            else:
-                setup_results.append("Bridge already exists")
-            
-            # 2. Create IP pool
+            # 2. Create IP pool - Fixed logic
             ip_pool = api.path('/ip/pool')
-            existing_pool = list(ip_pool.select('name').where('name', pool_name))
+            try:
+                all_pools = list(ip_pool.select('name'))
+                pool_names = [p.get('name', '') for p in all_pools]
+                logger.info(f"Existing pools: {pool_names}")
+                
+                if pool_name not in pool_names:
+                    ip_pool.add(
+                        name=pool_name,
+                        ranges=ip_pool_range
+                    )
+                    setup_results.append("IP Pool created")
+                    logger.info(f"Created pool: {pool_name}")
+                else:
+                    setup_results.append("IP Pool already exists")
+                    logger.info(f"Pool {pool_name} already exists")
+            except Exception as pool_error:
+                logger.error(f"Pool creation error: {str(pool_error)}")
+                setup_results.append(f"Pool error: {str(pool_error)}")
             
-            if not existing_pool:
-                ip_pool.add(
-                    name=pool_name,
-                    ranges=ip_pool_range
-                )
-                setup_results.append("IP Pool created")
-            else:
-                setup_results.append("IP Pool already exists")
-            
-            # 3. Add IP address to bridge
+            # 3. Add IP address to bridge - Fixed logic
             ip_address = api.path('/ip/address')
-            existing_address = list(ip_address.select('address').where('interface', bridge_name))
-            
-            if not existing_address:
-                network_parts = network_address.split('/')
-                ip_address.add(
-                    address=network_address,
-                    interface=bridge_name,
-                    network=f"{network_parts[0].rsplit('.', 1)[0]}.0.0"
-                )
-                setup_results.append("IP Address assigned")
-            else:
-                setup_results.append("IP Address already assigned")
+            try:
+                all_addresses = list(ip_address.select('address', 'interface'))
+                bridge_addresses = [a for a in all_addresses if a.get('interface') == bridge_name]
+                logger.info(f"Existing addresses on {bridge_name}: {bridge_addresses}")
+                
+                if not bridge_addresses:
+                    network_parts = network_address.split('/')
+                    ip_address.add(
+                        address=network_address,
+                        interface=bridge_name,
+                        network=f"{network_parts[0].rsplit('.', 1)[0]}.0.0"
+                    )
+                    setup_results.append("IP Address assigned")
+                    logger.info(f"Assigned IP {network_address} to {bridge_name}")
+                else:
+                    setup_results.append("IP Address already assigned")
+                    logger.info(f"IP already assigned to {bridge_name}")
+            except Exception as ip_error:
+                logger.error(f"IP assignment error: {str(ip_error)}")
+                setup_results.append(f"IP error: {str(ip_error)}")
             
             api.close()
             logger.info(f"f2net_bridge setup completed")

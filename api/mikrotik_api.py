@@ -1026,28 +1026,37 @@ def setup_network():
         ip_pool_range = data.get('ip_pool_range', '172.31.0.2-172.31.255.254')
         network_address = data.get('network_address', '172.31.0.1/16')
         
+        logger.info(f"Starting f2net_bridge setup - Host: {host}, Port: {port}, User: {username}")
+        logger.info(f"IP Pool Range: {ip_pool_range}, Network: {network_address}")
+        
         mikrotik_service = MikroTikService(current_app)
+        
+        logger.info("Calling setup_f2net_bridge service method")
         result = mikrotik_service.setup_f2net_bridge(
             username, password, host, port, ip_pool_range, network_address
         )
         
+        logger.info(f"Service method returned: {result}")
+        
         if result['success']:
+            logger.info("f2net_bridge setup completed successfully")
             return jsonify({
                 'success': True,
                 'message': 'f2net_bridge and address pool created successfully',
                 'setup_details': result
             }), 201
         else:
+            logger.error(f"f2net_bridge setup failed: {result.get('error')}")
             return jsonify({
                 'success': False,
                 'error': result.get('error')
             }), 500
             
     except Exception as e:
-        logger.error("Error setting up f2net_bridge", error=str(e))
+        logger.error(f"Exception in network/setup endpoint: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': 'Internal server error'
+            'error': f'Internal server error: {str(e)}'
         }), 500
 
 
