@@ -259,20 +259,6 @@ def device_status(device_name):
         return jsonify({
             'success': False,
             'error': str(e)
-        }), 500ve_users
-                # Limit to 10 for performance
-            })
-
-        return jsonify({
-            'success': True,
-            'data': response_data
-        }), 200
-
-    except Exception as e:
-        logger.error(f"Failed to get device status for {device_name}", error=str(e))
-        return jsonify({
-            'success': False,
-            'error': str(e)
         }), 500
 
 @mikrotik_bp.route('/users/queue/create', methods=['POST'])
