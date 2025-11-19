@@ -142,9 +142,14 @@ def device_status(device_name):
             )
             
             # Test connection - just verify API works
-            api.path('/system/identity').get()
-            logger.info(f"Successfully connected to {device_name}")
-            is_connected = True
+            try:
+                # Simple test - just call the API without processing result
+                list(api.path('/system/identity'))
+                logger.info(f"Successfully connected to {device_name}")
+                is_connected = True
+            except Exception as test_error:
+                logger.error(f"API test failed for {device_name}: {str(test_error)}")
+                raise test_error
             
         except Exception as conn_error:
             logger.error(f"Connection failed to {device_name}: {str(conn_error)}")
