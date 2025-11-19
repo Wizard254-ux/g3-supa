@@ -114,9 +114,9 @@ def device_config(device_name):
         }), 500
 
 
-@mikrotik_bp.route('/devices/<device_name>/Details', methods=['POST'])
+@mikrotik_bp.route('/devices/<device_name>/status', methods=['POST'])
 @api_endpoint(require_auth=True, require_json=True, required_fields=['username', 'password', 'host'])
-def device_details(device_name):
+def device_status(device_name):
     """
     Get status of a specific MikroTik device with custom credentials
     """
@@ -126,13 +126,13 @@ def device_details(device_name):
         password = data['password']
         host = data['host']
         port = data.get('port', 8728)
-        
+
         logger.info(f"Attempting connection to {device_name} at {host}:{port} with user: {username}")
-        
+
         # Test connection with provided credentials
         try:
             import librouteros
-            
+
             api = librouteros.connect(
                 host=host,
                 username=username,
@@ -140,7 +140,7 @@ def device_details(device_name):
                 port=port,
                 timeout=10
             )
-            
+
             # Test connection - just verify API works
             try:
                 # Simple test - just call the API without processing result
@@ -150,7 +150,7 @@ def device_details(device_name):
             except Exception as test_error:
                 logger.error(f"API test failed for {device_name}: {str(test_error)}")
                 raise test_error
-            
+
         except Exception as conn_error:
             logger.error(f"Connection failed to {device_name}: {str(conn_error)}")
             is_connected = False
@@ -176,11 +176,11 @@ def device_details(device_name):
                     'free_memory': resources.get('free-memory', ''),
                     'total_memory': resources.get('total-memory', '')
                 }
-                
+
                 # Get interface stats
                 logger.info(f"Getting interface stats for {device_name}")
                 interfaces = list(api.path('/interface').select('name', 'type', 'running', 'rx-byte', 'tx-byte'))
-                
+
                 # Get active users (simple queues)
                 logger.info(f"Getting active users for {device_name}")
                 queues = list(api.path('/queue/simple').select('name', 'target', 'max-limit'))
@@ -192,9 +192,9 @@ def device_details(device_name):
                     'active_users_count': len(active_users),
                     'active_users': active_users[:10]  # Limit to 10
                 })
-                
+
                 logger.info(f"Successfully retrieved all data for {device_name}")
-                
+
             except Exception as data_error:
                 logger.error(f"Error getting device data for {device_name}: {str(data_error)}")
                 response_data['data_error'] = str(data_error)
@@ -211,55 +211,7 @@ def device_details(device_name):
             'error': str(e)
         }), 500
 
-@mikrotik_bp.route('/devices/<device_name>/status', methods=['GET'])
-@api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
-def device_status(device_name):
-    """
-    Get status of a specific MikroTik device
-    """
-    try:
-        mikrotik_service = MikroTikService(current_app)
 
-        # Check if device exists
-        if device_name not in mikrotik_service.devices:
-            return jsonify({
-                'success': False,
-                'error': f'Device "{device_name}" not found'
-            }), 404
-
-        # Check connection
-        is_connected = mikrotik_service.check_connection(device_name)
-
-        response_data = {
-            'device_name': device_name,
-            'connected': is_connected,
-            'timestamp': datetime.utcnow().isoformat()
-        }
-
-        if is_connected:
-            # Get detailed system information
-            system_resources = mikrotik_service.get_system_resources(device_name)
-            interface_stats = mikrotik_service.get_interface_stats(device_name)
-            active_users = mikrotik_service.get_all_active_users(device_name)
-
-            response_data.update({
-                'system_resources': system_resources,
-                'interface_stats': interface_stats,
-                'active_users_count': len(active_users),
-                'active_users': active_users[:10] if len(active_users) > 10 else active_users
-            })
-
-        return jsonify({
-            'success': True,
-            'data': response_data
-        }), 200
-
-    except Exception as e:
-        logger.error(f"Failed to get device status for {device_name}", error=str(e))
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 @mikrotik_bp.route('/users/queue/create', methods=['POST'])
 @api_endpoint(
