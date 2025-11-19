@@ -394,7 +394,10 @@ class MikroTikService:
             api = self.get_connection(device_name)
             resources = api.path('/system/resource')
 
-            resource_data = list(resources.get())[0]
+            resource_data = list(resources.select(
+                'uptime', 'version', 'cpu-load', 'free-memory', 'total-memory',
+                'free-hdd-space', 'total-hdd-space'
+            ))[0]
 
             return {
                 'success': True,

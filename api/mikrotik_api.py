@@ -161,7 +161,9 @@ def device_status(device_name):
             try:
                 # Get system resources
                 logger.info(f"Getting system resources for {device_name}")
-                resources = list(api.path('/system/resource').get())[0]
+                resources = list(api.path('/system/resource').select(
+                    'uptime', 'version', 'cpu-load', 'free-memory', 'total-memory'
+                ))[0]
                 system_resources = {
                     'uptime': resources.get('uptime', ''),
                     'version': resources.get('version', ''),
