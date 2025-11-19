@@ -832,6 +832,263 @@ def create_backup():
         }), 500
 
 
+# Network Infrastructure Management APIs
+
+@mikrotik_bp.route('/bridge/create', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['bridge_name']
+)
+def create_bridge():
+    """
+    Create bridge interface
+    """
+    try:
+        data = g.validated_data
+        bridge_name = data['bridge_name']
+        device_name = data.get('device_name', 'core_router')
+        auto_mac = data.get('auto_mac', False)
+        admin_mac = data.get('admin_mac', '00:00:00:00:00:00')
+        
+        mikrotik_service = MikroTikService(current_app)
+        result = mikrotik_service.create_bridge(bridge_name, auto_mac, admin_mac, device_name)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': f'Bridge {bridge_name} created successfully',
+                'bridge_details': result
+            }), 201
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error')
+            }), 500
+            
+    except Exception as e:
+        logger.error("Error creating bridge", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
+@mikrotik_bp.route('/bridge/add-port', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['bridge_name', 'interface']
+)
+def add_bridge_port():
+    """
+    Add interface to bridge
+    """
+    try:
+        data = g.validated_data
+        bridge_name = data['bridge_name']
+        interface = data['interface']
+        device_name = data.get('device_name', 'core_router')
+        
+        mikrotik_service = MikroTikService(current_app)
+        result = mikrotik_service.add_bridge_port(bridge_name, interface, device_name)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': f'Interface {interface} added to bridge {bridge_name}'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error')
+            }), 500
+            
+    except Exception as e:
+        logger.error("Error adding bridge port", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
+@mikrotik_bp.route('/pppoe/server/configure', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['interface', 'service_name']
+)
+def configure_pppoe_server():
+    """
+    Configure PPPoE server on specific interface
+    """
+    try:
+        data = g.validated_data
+        interface = data['interface']
+        service_name = data['service_name']
+        device_name = data.get('device_name', 'core_router')
+        
+        config = {
+            'local_address': data.get('local_address', '172.31.0.1'),
+            'remote_address': data.get('remote_address', 'hotspot-pool'),
+            'use_encryption': data.get('use_encryption', True),
+            'authentication': data.get('authentication', 'pap,chap,mschap1,mschap2'),
+            'keepalive_timeout': data.get('keepalive_timeout', 60)
+        }
+        
+        mikrotik_service = MikroTikService(current_app)
+        result = mikrotik_service.configure_pppoe_server(interface, service_name, config, device_name)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': f'PPPoE server configured on {interface}',
+                'server_details': result
+            }), 201
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error')
+            }), 500
+            
+    except Exception as e:
+        logger.error("Error configuring PPPoE server", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
+@mikrotik_bp.route('/hotspot/server/configure', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['interface', 'hotspot_name']
+)
+def configure_hotspot_server():
+    """
+    Configure hotspot server on specific interface
+    """
+    try:
+        data = g.validated_data
+        interface = data['interface']
+        hotspot_name = data['hotspot_name']
+        device_name = data.get('device_name', 'core_router')
+        
+        config = {
+            'address_pool': data.get('address_pool', 'hotspot-pool'),
+            'profile': data.get('profile', 'hotspot-profile'),
+            'addresses_per_mac': data.get('addresses_per_mac', 1),
+            'idle_timeout': data.get('idle_timeout', 'none'),
+            'keepalive_timeout': data.get('keepalive_timeout', '2m')
+        }
+        
+        mikrotik_service = MikroTikService(current_app)
+        result = mikrotik_service.configure_hotspot_server(interface, hotspot_name, config, device_name)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': f'Hotspot server {hotspot_name} configured on {interface}',
+                'server_details': result
+            }), 201
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error')
+            }), 500
+            
+    except Exception as e:
+        logger.error("Error configuring hotspot server", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
+@mikrotik_bp.route('/network/setup', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['username', 'password', 'host']
+)
+def setup_network():
+    """
+    Create f2net_bridge and address pool
+    """
+    try:
+        data = g.validated_data
+        username = data['username']
+        password = data['password']
+        host = data['host']
+        port = data.get('port', 8728)
+        
+        ip_pool_range = data.get('ip_pool_range', '172.31.0.2-172.31.255.254')
+        network_address = data.get('network_address', '172.31.0.1/16')
+        
+        mikrotik_service = MikroTikService(current_app)
+        result = mikrotik_service.setup_f2net_bridge(
+            username, password, host, port, ip_pool_range, network_address
+        )
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': 'f2net_bridge and address pool created successfully',
+                'setup_details': result
+            }), 201
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error')
+            }), 500
+            
+    except Exception as e:
+        logger.error("Error setting up f2net_bridge", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
+@mikrotik_bp.route('/anti-sharing/enable', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['interface']
+)
+def enable_anti_sharing():
+    """
+    Enable hotspot anti-sharing protection (TTL-based)
+    """
+    try:
+        data = g.validated_data
+        interface = data['interface']
+        device_name = data.get('device_name', 'core_router')
+        
+        mikrotik_service = MikroTikService(current_app)
+        result = mikrotik_service.enable_anti_sharing_protection(interface, device_name)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': f'Anti-sharing protection enabled on {interface}',
+                'rules_created': result.get('rules_created', [])
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error')
+            }), 500
+            
+    except Exception as e:
+        logger.error("Error enabling anti-sharing protection", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
 @mikrotik_bp.route('/health', methods=['GET'])
 @api_endpoint(require_auth=False, require_json=False, cache_timeout=30)
 def mikrotik_health():

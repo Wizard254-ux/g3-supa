@@ -477,6 +477,448 @@ class MikroTikService:
                 'error': str(e)
             }
 
+    def create_bridge(self, bridge_name: str, auto_mac: bool = False, 
+                     admin_mac: str = '00:00:00:00:00:00', device_name: str = 'core_router') -> Dict:
+        """Create bridge interface"""
+        try:
+            api = self.get_connection(device_name)
+            bridge_interface = api.path('/interface/bridge')
+            
+            # Check if bridge already exists
+            existing = list(bridge_interface.select('name').where('name', bridge_name))
+            
+            if existing:
+                return {
+                    'success': False,
+                    'error': f'Bridge {bridge_name} already exists'
+                }
+            
+            bridge_config = {
+                'name': bridge_name,
+                'auto-mac': 'yes' if auto_mac else 'no',
+                'admin-mac': admin_mac if not auto_mac else ''
+            }
+            
+            bridge_interface.add(**bridge_config)
+            logger.info(f"Created bridge: {bridge_name}")
+            
+            return {
+                'success': True,
+                'bridge_name': bridge_name,
+                'auto_mac': auto_mac,
+                'admin_mac': admin_mac
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to create bridge {bridge_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def add_bridge_port(self, bridge_name: str, interface: str, device_name: str = 'core_router') -> Dict:
+        """Add interface to bridge"""
+        try:
+            api = self.get_connection(device_name)
+            bridge_port = api.path('/interface/bridge/port')
+            
+            # Check if port already exists in bridge
+            existing = list(bridge_port.select('interface').where('interface', interface))
+            
+            if existing:
+                return {
+                    'success': False,
+                    'error': f'Interface {interface} already in a bridge'
+                }
+            
+            bridge_port.add(interface=interface, bridge=bridge_name)
+            logger.info(f"Added interface {interface} to bridge {bridge_name}")
+            
+            return {
+                'success': True,
+                'interface': interface,
+                'bridge': bridge_name
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to add interface {interface} to bridge {bridge_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def configure_pppoe_server(self, interface: str, service_name: str, config: Dict, 
+                              device_name: str = 'core_router') -> Dict:
+        """Configure PPPoE server"""
+        try:
+            api = self.get_connection(device_name)
+            
+            # Create PPPoE profile first
+            pppoe_profile = api.path('/ppp/profile')
+            profile_config = {
+                'name': 'pppoe-profile',
+                'local-address': config['local_address'],
+                'remote-address': config['remote_address'],
+                'use-encryption': 'yes' if config['use_encryption'] else 'no'
+            }
+            
+            # Check if profile exists
+            existing_profile = list(pppoe_profile.select('name').where('name', 'pppoe-profile'))
+            if not existing_profile:
+                pppoe_profile.add(**profile_config)
+                logger.info("Created PPPoE profile")
+            
+            # Configure PPPoE server
+            pppoe_server = api.path('/interface/pppoe-server/server')
+            server_config = {
+                'service-name': service_name,
+                'interface': interface,
+                'default-profile': 'pppoe-profile',
+                'authentication': config['authentication'],
+                'keepalive-timeout': str(config['keepalive_timeout'])
+            }
+            
+            # Check if server already exists
+            existing_server = list(pppoe_server.select('service-name').where('service-name', service_name))
+            if existing_server:
+                return {
+                    'success': False,
+                    'error': f'PPPoE server with service name {service_name} already exists'
+                }
+            
+            pppoe_server.add(**server_config)
+            logger.info(f"Configured PPPoE server on {interface}")
+            
+            return {
+                'success': True,
+                'interface': interface,
+                'service_name': service_name,
+                'profile': 'pppoe-profile'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to configure PPPoE server on {interface}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def configure_hotspot_server(self, interface: str, hotspot_name: str, config: Dict,
+                                device_name: str = 'core_router') -> Dict:
+        """Configure hotspot server"""
+        try:
+            api = self.get_connection(device_name)
+            
+            # Create hotspot profile first
+            hotspot_profile = api.path('/ip/hotspot/profile')
+            profile_config = {
+                'name': 'hotspot-profile',
+                'hotspot-address': '172.31.0.1',
+                'dns-name': 'router.local',
+                'html-directory': 'hotspot',
+                'login-by': 'http-chap,http-pap'
+            }
+            
+            existing_profile = list(hotspot_profile.select('name').where('name', 'hotspot-profile'))
+            if not existing_profile:
+                hotspot_profile.add(**profile_config)
+                logger.info("Created hotspot profile")
+            
+            # Create hotspot user profile
+            hotspot_user_profile = api.path('/ip/hotspot/user/profile')
+            user_profile_config = {
+                'name': 'default-user-profile',
+                'address-pool': config['address_pool'],
+                'idle-timeout': config['idle_timeout'],
+                'keepalive-timeout': config['keepalive_timeout'],
+                'shared-users': 1
+            }
+            
+            existing_user_profile = list(hotspot_user_profile.select('name').where('name', 'default-user-profile'))
+            if not existing_user_profile:
+                hotspot_user_profile.add(**user_profile_config)
+                logger.info("Created hotspot user profile")
+            
+            # Add hotspot server
+            hotspot = api.path('/ip/hotspot')
+            hotspot_config = {
+                'name': hotspot_name,
+                'interface': interface,
+                'address-pool': config['address_pool'],
+                'profile': 'hotspot-profile',
+                'addresses-per-mac': config['addresses_per_mac']
+            }
+            
+            existing_hotspot = list(hotspot.select('name').where('name', hotspot_name))
+            if existing_hotspot:
+                return {
+                    'success': False,
+                    'error': f'Hotspot {hotspot_name} already exists'
+                }
+            
+            hotspot.add(**hotspot_config)
+            logger.info(f"Configured hotspot server {hotspot_name} on {interface}")
+            
+            return {
+                'success': True,
+                'hotspot_name': hotspot_name,
+                'interface': interface,
+                'address_pool': config['address_pool']
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to configure hotspot server {hotspot_name} on {interface}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def setup_complete_network(self, bridge_name: str, ports: List[str], ip_pool_range: str,
+                              network_address: str, enable_pppoe: bool = False, 
+                              enable_hotspot: bool = False, enable_anti_sharing: bool = False,
+                              device_name: str = 'core_router') -> Dict:
+        """Complete network setup based on the provided script"""
+        try:
+            api = self.get_connection(device_name)
+            setup_results = []
+            
+            # 1. Create bridge
+            bridge_result = self.create_bridge(bridge_name, False, '00:00:00:00:00:00', device_name)
+            setup_results.append(f"Bridge: {bridge_result['success']}")
+            
+            # 2. Add ports to bridge
+            for port in ports:
+                port_result = self.add_bridge_port(bridge_name, port, device_name)
+                setup_results.append(f"Port {port}: {port_result['success']}")
+            
+            # 3. Configure IP pool
+            ip_pool = api.path('/ip/pool')
+            pool_config = {
+                'name': 'hotspot-pool',
+                'ranges': ip_pool_range
+            }
+            
+            existing_pool = list(ip_pool.select('name').where('name', 'hotspot-pool'))
+            if not existing_pool:
+                ip_pool.add(**pool_config)
+                setup_results.append("IP Pool: True")
+            
+            # 4. Add IP address to bridge
+            ip_address = api.path('/ip/address')
+            network_parts = network_address.split('/')
+            address_config = {
+                'address': network_address,
+                'interface': bridge_name,
+                'network': f"{network_parts[0].rsplit('.', 1)[0]}.0.0"
+            }
+            
+            existing_address = list(ip_address.select('address').where('interface', bridge_name))
+            if not existing_address:
+                ip_address.add(**address_config)
+                setup_results.append("IP Address: True")
+            
+            # 5. Configure PPPoE server if enabled
+            if enable_pppoe:
+                pppoe_config = {
+                    'local_address': network_parts[0],
+                    'remote_address': 'hotspot-pool',
+                    'use_encryption': True,
+                    'authentication': 'pap,chap,mschap1,mschap2',
+                    'keepalive_timeout': 60
+                }
+                pppoe_result = self.configure_pppoe_server(bridge_name, 'service', pppoe_config, device_name)
+                setup_results.append(f"PPPoE Server: {pppoe_result['success']}")
+            
+            # 6. Configure Hotspot if enabled
+            if enable_hotspot:
+                hotspot_config = {
+                    'address_pool': 'hotspot-pool',
+                    'profile': 'hotspot-profile',
+                    'addresses_per_mac': 1,
+                    'idle_timeout': 'none',
+                    'keepalive_timeout': '2m'
+                }
+                hotspot_result = self.configure_hotspot_server(bridge_name, 'hotspot1', hotspot_config, device_name)
+                setup_results.append(f"Hotspot Server: {hotspot_result['success']}")
+            
+            # 7. Enable anti-sharing protection if requested
+            if enable_anti_sharing:
+                anti_sharing_result = self.enable_anti_sharing_protection(bridge_name, device_name)
+                setup_results.append(f"Anti-sharing: {anti_sharing_result['success']}")
+            
+            # 8. Configure DHCP server
+            dhcp_pool = api.path('/ip/dhcp-server')
+            dhcp_config = {
+                'name': 'dhcp-hotspot',
+                'interface': bridge_name,
+                'address-pool': 'hotspot-pool',
+                'lease-time': '1h'
+            }
+            
+            existing_dhcp = list(dhcp_pool.select('name').where('name', 'dhcp-hotspot'))
+            if not existing_dhcp:
+                dhcp_pool.add(**dhcp_config)
+                
+                # Add DHCP network
+                dhcp_network = api.path('/ip/dhcp-server/network')
+                dhcp_network.add(
+                    address=f"{network_parts[0].rsplit('.', 2)[0]}.0.0/{network_parts[1]}",
+                    gateway=network_parts[0],
+                    **{'dns-server': network_parts[0]}
+                )
+                setup_results.append("DHCP Server: True")
+            
+            logger.info(f"Network setup completed for {bridge_name}")
+            
+            return {
+                'success': True,
+                'bridge_name': bridge_name,
+                'ports_added': ports,
+                'setup_results': setup_results,
+                'pppoe_enabled': enable_pppoe,
+                'hotspot_enabled': enable_hotspot,
+                'anti_sharing_enabled': enable_anti_sharing
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to setup network {bridge_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def enable_anti_sharing_protection(self, interface: str, device_name: str = 'core_router') -> Dict:
+        """Enable hotspot anti-sharing protection using TTL modification"""
+        try:
+            api = self.get_connection(device_name)
+            rules_created = []
+            
+            # Create mangle rule to mark packets with TTL > 1
+            firewall_mangle = api.path('/ip/firewall/mangle')
+            mangle_config = {
+                'chain': 'prerouting',
+                'in-interface': interface,
+                'ttl': 'greater-than=1',
+                'action': 'mark-connection',
+                'new-connection-mark': 'shared_conn',
+                'comment': 'Mark shared connections (TTL > 1)'
+            }
+            
+            # Check if rule already exists
+            existing_mangle = list(firewall_mangle.select('comment').where('comment', 'Mark shared connections (TTL > 1)'))
+            if not existing_mangle:
+                firewall_mangle.add(**mangle_config)
+                rules_created.append('TTL marking rule')
+            
+            # Create filter rule to drop shared connections
+            firewall_filter = api.path('/ip/firewall/filter')
+            filter_config = {
+                'chain': 'forward',
+                'connection-mark': 'shared_conn',
+                'action': 'drop',
+                'comment': 'Block connection sharing'
+            }
+            
+            existing_filter = list(firewall_filter.select('comment').where('comment', 'Block connection sharing'))
+            if not existing_filter:
+                firewall_filter.add(**filter_config)
+                rules_created.append('Connection blocking rule')
+            
+            logger.info(f"Anti-sharing protection enabled on {interface}")
+            
+            return {
+                'success': True,
+                'interface': interface,
+                'rules_created': rules_created
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to enable anti-sharing protection on {interface}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def setup_f2net_bridge(self, username: str, password: str, host: str, port: int,
+                           ip_pool_range: str, network_address: str) -> Dict:
+        """Create f2net_bridge and address pool with dynamic credentials"""
+        try:
+            import librouteros
+            
+            # Connect with provided credentials
+            api = librouteros.connect(
+                host=host,
+                username=username,
+                password=password,
+                port=port,
+                timeout=10
+            )
+            
+            setup_results = []
+            bridge_name = 'f2net_bridge'
+            pool_name = 'f2net_pool'
+            
+            # 1. Create bridge
+            bridge_interface = api.path('/interface/bridge')
+            existing_bridge = list(bridge_interface.select('name').where('name', bridge_name))
+            
+            if not existing_bridge:
+                bridge_interface.add(
+                    name=bridge_name,
+                    **{'auto-mac': 'no'},
+                    **{'admin-mac': '00:00:00:00:00:00'}
+                )
+                setup_results.append("Bridge created")
+            else:
+                setup_results.append("Bridge already exists")
+            
+            # 2. Create IP pool
+            ip_pool = api.path('/ip/pool')
+            existing_pool = list(ip_pool.select('name').where('name', pool_name))
+            
+            if not existing_pool:
+                ip_pool.add(
+                    name=pool_name,
+                    ranges=ip_pool_range
+                )
+                setup_results.append("IP Pool created")
+            else:
+                setup_results.append("IP Pool already exists")
+            
+            # 3. Add IP address to bridge
+            ip_address = api.path('/ip/address')
+            existing_address = list(ip_address.select('address').where('interface', bridge_name))
+            
+            if not existing_address:
+                network_parts = network_address.split('/')
+                ip_address.add(
+                    address=network_address,
+                    interface=bridge_name,
+                    network=f"{network_parts[0].rsplit('.', 1)[0]}.0.0"
+                )
+                setup_results.append("IP Address assigned")
+            else:
+                setup_results.append("IP Address already assigned")
+            
+            api.close()
+            logger.info(f"f2net_bridge setup completed")
+            
+            return {
+                'success': True,
+                'bridge_name': bridge_name,
+                'pool_name': pool_name,
+                'ip_pool_range': ip_pool_range,
+                'network_address': network_address,
+                'setup_results': setup_results
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to setup f2net_bridge", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def close_connections(self):
         """Close all MikroTik connections"""
         with self.connection_lock:
