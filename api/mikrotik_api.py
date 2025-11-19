@@ -114,7 +114,7 @@ def device_config(device_name):
         }), 500
 
 
-@mikrotik_bp.route('/devices/<device_name>/status', methods=['POST'])
+@mikrotik_bp.route('/devices/<device_name>/Details', methods=['POST'])
 @api_endpoint(require_auth=True, require_json=True, required_fields=['username', 'password', 'host'])
 def device_status(device_name):
     """
@@ -211,6 +211,56 @@ def device_status(device_name):
             'error': str(e)
         }), 500
 
+@mikrotik_bp.route('/devices/<device_name>/status', methods=['GET'])
+@api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
+def device_status(device_name):
+    """
+    Get status of a specific MikroTik device
+    """
+    try:
+        mikrotik_service = MikroTikService(current_app)
+
+        # Check if device exists
+        if device_name not in mikrotik_service.devices:
+            return jsonify({
+                'success': False,
+                'error': f'Device "{device_name}" not found'
+            }), 404
+
+        # Check connection
+        is_connected = mikrotik_service.check_connection(device_name)
+
+        response_data = {
+            'device_name': device_name,
+            'connected': is_connected,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+        if is_connected:
+            # Get detailed system information
+            system_resources = mikrotik_service.get_system_resources(device_name)
+            interface_stats = mikrotik_service.get_interface_stats(device_name)
+            active_users = mikrotik_service.get_all_active_users(device_name)
+
+            response_data.update({
+                'system_resources': system_resources,
+                'interface_stats': interface_stats,
+                'active_users_count': len(active_users),
+                'active_users': active_users[:10] if len(active_users) > 10 else active_users
+                # Limit to 10 for performance
+            })
+
+        return jsonify({
+            'success': True,
+            'data': response_data
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get device status for {device_name}", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @mikrotik_bp.route('/users/queue/create', methods=['POST'])
 @api_endpoint(
