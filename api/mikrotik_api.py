@@ -114,6 +114,90 @@ def device_config(device_name):
         }), 500
 
 
+@mikrotik_bp.route('/devices/status', methods=['GET'])
+@api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
+def devices_status():
+    """
+    Check status for multiple devices from identities query parameter
+    """
+    try:
+        identities = request.args.get('identities', '')
+        if not identities:
+            return jsonify({
+                'success': False,
+                'error': 'identities parameter required'
+            }), 400
+        
+        device_names = [name.strip() for name in identities.split(',')]
+        logger.info(f"Checking status for devices: {device_names}")
+        
+        vpn_manager = OpenVPNManager(current_app)
+        
+        if not os.path.exists(vpn_manager.status_file):
+            return jsonify({
+                'success': False,
+                'error': 'OpenVPN status file not found'
+            }), 404
+        
+        with open(vpn_manager.status_file, 'r') as f:
+            lines = f.readlines()
+        
+        # Parse all CLIENT_LIST entries
+        connected_devices = {}
+        for line in lines:
+            line = line.strip()
+            if line.startswith('CLIENT_LIST,'):
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    common_name = parts[1]
+                    # Check if this matches any requested device
+                    for device_name in device_names:
+                        full_device_name = f"f2net_{device_name}"
+                        if common_name == device_name or common_name == full_device_name:
+                            vpn_info = None
+                            if len(parts) >= 8:
+                                vpn_info = {
+                                    'real_address': parts[2],
+                                    'virtual_address': parts[3],
+                                    'bytes_received': int(parts[5]) if parts[5].isdigit() else 0,
+                                    'bytes_sent': int(parts[6]) if parts[6].isdigit() else 0,
+                                    'connected_since': parts[7]
+                                }
+                            
+                            connected_devices[device_name] = {
+                                'device_name': device_name,
+                                'connected': True,
+                                'vpn_connected': True,
+                                'vpn_connection_info': vpn_info
+                            }
+        
+        # Add disconnected devices
+        results = []
+        for device_name in device_names:
+            if device_name in connected_devices:
+                results.append(connected_devices[device_name])
+            else:
+                results.append({
+                    'device_name': device_name,
+                    'connected': False,
+                    'vpn_connected': False,
+                    'vpn_connection_info': None
+                })
+        
+        return jsonify({
+            'success': True,
+            'data': results,
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error checking devices status", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @mikrotik_bp.route('/devices/<device_name>/currentstatus', methods=['GET'])
 @api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
 def device_current_status(device_name):
