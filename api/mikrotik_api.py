@@ -141,9 +141,9 @@ def device_status(device_name):
                 timeout=10
             )
             
-            # Test connection
-            identity = list(api.path('/system/identity').get())[0]
-            logger.info(f"Successfully connected to {device_name}: {identity.get('name', 'Unknown')}")
+            # Test connection - just verify API works
+            api.path('/system/identity').get()
+            logger.info(f"Successfully connected to {device_name}")
             is_connected = True
             
         except Exception as conn_error:
