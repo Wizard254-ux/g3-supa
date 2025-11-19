@@ -134,21 +134,43 @@ def device_current_status(device_name):
             
         # Parse CLIENT_LIST entries like the OpenVPN manager does
         is_connected = False
+        vpn_connection_info = None
         full_device_name = f"f2net_{device_name}"
+        
+        logger.info(f"Checking for device: {device_name} or {full_device_name}")
         
         for line in lines:
             line = line.strip()
             if line.startswith('CLIENT_LIST,'):
                 parts = line.split(',')
+                logger.info(f"Found CLIENT_LIST with {len(parts)} parts: {parts[:3]}...")
                 if len(parts) >= 2:
                     common_name = parts[1]
+                    logger.info(f"Checking common_name: {common_name}")
                     if common_name == device_name or common_name == full_device_name:
+                        logger.info(f"Device found! Parts count: {len(parts)}")
                         is_connected = True
+                        if len(parts) >= 8:
+                            vpn_connection_info = {
+                                'real_address': parts[2],
+                                'virtual_address': parts[3],
+                                'bytes_received': int(parts[5]) if parts[5].isdigit() else 0,
+                                'bytes_sent': int(parts[6]) if parts[6].isdigit() else 0,
+                                'connected_since': parts[7]
+                            }
+                            logger.info(f"VPN connection info: {vpn_connection_info}")
+                        else:
+                            vpn_connection_info = {'error': f'Incomplete data, only {len(parts)} parts'}
+                            logger.warning(f"Incomplete CLIENT_LIST data: {parts}")
                         break
+        
+        logger.info(f"Final result - connected: {is_connected}, vpn_info: {vpn_connection_info}")
         
         response_data = {
             'device_name': device_name,
             'connected': is_connected,
+            'vpn_connected': is_connected,
+            'vpn_connection_info': vpn_connection_info,
             'timestamp': datetime.utcnow().isoformat()
         }
         
