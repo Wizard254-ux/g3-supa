@@ -116,7 +116,7 @@ def device_config(device_name):
 
 @mikrotik_bp.route('/devices/<device_name>/Details', methods=['POST'])
 @api_endpoint(require_auth=True, require_json=True, required_fields=['username', 'password', 'host'])
-def device_status(device_name):
+def device_details(device_name):
     """
     Get status of a specific MikroTik device with custom credentials
     """
@@ -247,6 +247,19 @@ def device_status(device_name):
                 'interface_stats': interface_stats,
                 'active_users_count': len(active_users),
                 'active_users': active_users[:10] if len(active_users) > 10 else active_users
+            })
+
+        return jsonify({
+            'success': True,
+            'data': response_data
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get device status for {device_name}", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500ve_users
                 # Limit to 10 for performance
             })
 
