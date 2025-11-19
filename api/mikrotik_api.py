@@ -114,24 +114,42 @@ def device_config(device_name):
         }), 500
 
 
-@mikrotik_bp.route('/devices/<device_name>/status', methods=['GET'])
-@api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
+@mikrotik_bp.route('/devices/<device_name>/status', methods=['POST'])
+@api_endpoint(require_auth=True, require_json=True, required_fields=['username', 'password', 'host'])
 def device_status(device_name):
     """
-    Get status of a specific MikroTik device
+    Get status of a specific MikroTik device with custom credentials
     """
     try:
-        mikrotik_service = MikroTikService(current_app)
-
-        # Check if device exists
-        if device_name not in mikrotik_service.devices:
-            return jsonify({
-                'success': False,
-                'error': f'Device "{device_name}" not found'
-            }), 404
-
-        # Check connection
-        is_connected = mikrotik_service.check_connection(device_name)
+        data = g.validated_data
+        username = data['username']
+        password = data['password']
+        host = data['host']
+        port = data.get('port', 8728)
+        
+        logger.info(f"Attempting connection to {device_name} at {host}:{port} with user: {username}")
+        
+        # Test connection with provided credentials
+        try:
+            import librouteros
+            
+            api = librouteros.connect(
+                host=host,
+                username=username,
+                password=password,
+                port=port,
+                timeout=10
+            )
+            
+            # Test connection
+            identity = list(api.path('/system/identity').get())[0]
+            logger.info(f"Successfully connected to {device_name}: {identity.get('name', 'Unknown')}")
+            is_connected = True
+            
+        except Exception as conn_error:
+            logger.error(f"Connection failed to {device_name}: {str(conn_error)}")
+            is_connected = False
+            api = None
 
         response_data = {
             'device_name': device_name,
@@ -139,19 +157,40 @@ def device_status(device_name):
             'timestamp': datetime.utcnow().isoformat()
         }
 
-        if is_connected:
-            # Get detailed system information
-            system_resources = mikrotik_service.get_system_resources(device_name)
-            interface_stats = mikrotik_service.get_interface_stats(device_name)
-            active_users = mikrotik_service.get_all_active_users(device_name)
+        if is_connected and api:
+            try:
+                # Get system resources
+                logger.info(f"Getting system resources for {device_name}")
+                resources = list(api.path('/system/resource').get())[0]
+                system_resources = {
+                    'uptime': resources.get('uptime', ''),
+                    'version': resources.get('version', ''),
+                    'cpu_load': resources.get('cpu-load', ''),
+                    'free_memory': resources.get('free-memory', ''),
+                    'total_memory': resources.get('total-memory', '')
+                }
+                
+                # Get interface stats
+                logger.info(f"Getting interface stats for {device_name}")
+                interfaces = list(api.path('/interface').select('name', 'type', 'running', 'rx-byte', 'tx-byte'))
+                
+                # Get active users (simple queues)
+                logger.info(f"Getting active users for {device_name}")
+                queues = list(api.path('/queue/simple').select('name', 'target', 'max-limit'))
+                active_users = [q for q in queues if q['name'].startswith('queue_')]
 
-            response_data.update({
-                'system_resources': system_resources,
-                'interface_stats': interface_stats,
-                'active_users_count': len(active_users),
-                'active_users': active_users[:10] if len(active_users) > 10 else active_users
-                # Limit to 10 for performance
-            })
+                response_data.update({
+                    'system_resources': system_resources,
+                    'interface_stats': interfaces[:5],  # Limit interfaces
+                    'active_users_count': len(active_users),
+                    'active_users': active_users[:10]  # Limit to 10
+                })
+                
+                logger.info(f"Successfully retrieved all data for {device_name}")
+                
+            except Exception as data_error:
+                logger.error(f"Error getting device data for {device_name}: {str(data_error)}")
+                response_data['data_error'] = str(data_error)
 
         return jsonify({
             'success': True,
