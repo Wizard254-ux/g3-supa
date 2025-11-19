@@ -114,6 +114,57 @@ def device_config(device_name):
         }), 500
 
 
+@mikrotik_bp.route('/devices/<device_name>/currentstatus', methods=['GET'])
+@api_endpoint(require_auth=True, require_json=False, cache_timeout=30)
+def device_current_status(device_name):
+    """
+    Check if device exists in OpenVPN status.log - same format as status endpoint but without MikroTik data
+    """
+    try:
+        vpn_manager = OpenVPNManager(current_app)
+        
+        if not os.path.exists(vpn_manager.status_file):
+            return jsonify({
+                'success': False,
+                'error': 'OpenVPN status file not found'
+            }), 404
+        
+        with open(vpn_manager.status_file, 'r') as f:
+            lines = f.readlines()
+            
+        # Parse CLIENT_LIST entries like the OpenVPN manager does
+        is_connected = False
+        full_device_name = f"f2net_{device_name}"
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('CLIENT_LIST,'):
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    common_name = parts[1]
+                    if common_name == device_name or common_name == full_device_name:
+                        is_connected = True
+                        break
+        
+        response_data = {
+            'device_name': device_name,
+            'connected': is_connected,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        return jsonify({
+            'success': True,
+            'data': response_data
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error checking device status for {device_name}", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @mikrotik_bp.route('/devices/<device_name>/status', methods=['POST'])
 @api_endpoint(require_auth=True, require_json=True, required_fields=['username', 'password', 'host'])
 def device_status(device_name):
@@ -210,7 +261,6 @@ def device_status(device_name):
             'success': False,
             'error': str(e)
         }), 500
-
 
 
 @mikrotik_bp.route('/users/queue/create', methods=['POST'])
