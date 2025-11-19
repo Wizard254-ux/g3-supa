@@ -869,8 +869,7 @@ class MikroTikService:
                 if bridge_name not in bridge_names:
                     bridge_interface.add(
                         name=bridge_name,
-                        **{'auto-mac': 'no'},
-                        **{'admin-mac': '00:00:00:00:00:00'}
+                        **{'auto-mac': 'yes'}
                     )
                     setup_results.append("Bridge created")
                     logger.info(f"Created bridge: {bridge_name}")
