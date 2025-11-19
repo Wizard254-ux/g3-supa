@@ -29,7 +29,9 @@ class OpenVPNManager:
 
     def __init__(self, app=None):
         self.app = app
+        self.status_file = None
         self.config_dir = None
+        self.easy_rsa_dir = None
         self.client_config_dir = None
         self.ca_cert = None
         self.server_cert = None
@@ -49,12 +51,14 @@ class OpenVPNManager:
     def init_app(self, app):
         """Initialize the service with Flask app"""
         self.app = app
+        self.status_file = app.config.get('OPENVPN_STATUS_FILE', '/var/log/openvpn/status.log')
         self.config_dir = app.config.get('OPENVPN_CONFIG_DIR', '/etc/openvpn')
+        self.easy_rsa_dir = app.config.get('OPENVPN_EASY_RSA_DIR', '/etc/openvpn/server/easy-rsa')
         self.client_config_dir = app.config.get('OPENVPN_CLIENT_CONFIG_DIR', '/etc/openvpn/clients')
-        self.ca_cert = app.config.get('OPENVPN_CA_CERT', '/etc/openvpn/ca.crt')
-        self.server_cert = app.config.get('OPENVPN_SERVER_CERT', '/etc/openvpn/server.crt')
-        self.server_key = app.config.get('OPENVPN_SERVER_KEY', '/etc/openvpn/server.key')
-        self.dh_params = app.config.get('OPENVPN_DH_PARAMS', '/etc/openvpn/dh2048.pem')
+        self.ca_cert = app.config.get('OPENVPN_CA_CERT', '/etc/openvpn/server/ca.crt')
+        self.server_cert = app.config.get('OPENVPN_SERVER_CERT', '/etc/openvpn/server/server.crt')
+        self.server_key = app.config.get('OPENVPN_SERVER_KEY', '/etc/openvpn/server/server.key')
+        self.dh_params = app.config.get('OPENVPN_DH_PARAMS', '/etc/openvpn/server/dh.pem')
         self.server_ip = app.config.get('OPENVPN_SERVER_IP', '10.8.0.0')
         self.server_mask = app.config.get('OPENVPN_SERVER_MASK', '255.255.255.0')
 
@@ -63,6 +67,9 @@ class OpenVPNManager:
 
         logger.info("Enhanced OpenVPN Manager initialized with SystemService integration")
 
+    def _run_command(self, *args, **kwargs):
+        return self.cert_service._run_command(*args, **kwargs)
+
     def _ensure_directories(self):
         """Ensure required directories exist"""
         try:
@@ -70,6 +77,12 @@ class OpenVPNManager:
             Path(self.client_config_dir).mkdir(parents=True, exist_ok=True)
             Path(f"{self.config_dir}/keys").mkdir(parents=True, exist_ok=True)
             Path(f"{self.config_dir}/ccd").mkdir(parents=True, exist_ok=True)
+            Path(f"{self.config_dir}/client_metadata").mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            logger.error("Permission denied creating OpenVPN directories. Run fix_openvpn_permissions.sh as root.",
+                         error=str(e))
+            raise SystemOperationError(
+                f"Directory creation failed due to permissions. Please ensure the application user has write access to {self.client_config_dir} and {self.config_dir}/client_metadata")
         except Exception as e:
             logger.error("Failed to create OpenVPN directories", error=str(e))
             raise SystemOperationError(f"Directory creation failed: {e}")
@@ -82,8 +95,8 @@ class OpenVPNManager:
             if not SecurityValidator.validate_config_name(f"f2net_{config_name}"):
                 raise SystemOperationError("Invalid config name format")
 
-            # Get service status using SystemService
-            status_result = self.openvpn_service.get_service_status(f"f2net_{config_name}")
+            # Get service status using SystemService  
+            status_result = self.openvpn_service.get_service_status(f"openvpn-server@{config_name}")
 
             # Check if OpenVPN process is listening
             listening = self._check_port_listening(1194)
@@ -237,7 +250,7 @@ class OpenVPNManager:
                 raise SystemOperationError("Invalid client IP address")
 
             # Check if client already exists
-            client_cert_path = f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt"
+            client_cert_path = f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt"
             if os.path.exists(client_cert_path):
                 raise SystemOperationError(f"Client 'f2net_{client_name}' already exists")
 
@@ -279,17 +292,28 @@ class OpenVPNManager:
                 'full_client_name': f"f2net_{client_name}",
                 'config_file': config_file_path,
                 'certificate_file': client_cert_path,
-                'key_file': f"{self.config_dir}/easy-rsa/pki/private/f2net_{client_name}.key",
+                'key_file': f"{self.easy_rsa_dir}/pki/private/f2net_{client_name}.key",
                 'config_content': config_content,
                 # 'metadata': metadata,
                 'created_at': datetime.utcnow().isoformat()
             }
 
         except SystemOperationError as e:
-            raise
+            logger.error(f"Failed to generate client certificate for {client_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e),
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
         except Exception as e:
             logger.error(f"Failed to generate client certificate for {client_name}", error=str(e))
-            raise SystemOperationError(f"Certificate generation failed: {e}")
+            return {
+                'success': False,
+                'error': f'Certificate generation failed: {str(e)}',
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
     def _validate_email(self, email: str) -> bool:
         """Validate email format"""
@@ -308,16 +332,55 @@ class OpenVPNManager:
         except Exception as e:
             logger.warning(f"Failed to store client metadata for {client_name}", error=str(e))
 
+    # def _load_client_metadata(self, client_name: str) -> Dict[str, Any]:
+    #     """Load client metadata"""
+    #     try:
+    #         metadata_file = f"{self.config_dir}/client_metadata/f2net_{client_name}.json"
+    #         if os.path.exists(metadata_file):
+    #             with open(metadata_file, 'r') as f:
+    #                 return json.load(f)
+    #         return {}
+    #     except Exception as e:
+    #         logger.warning(f"Failed to load client metadata for {client_name}", error=str(e))
+    #         return {}
+
     def _load_client_metadata(self, client_name: str) -> Dict[str, Any]:
-        """Load client metadata"""
+        """Load client metadata using system commands only (no os.* or open())."""
         try:
             metadata_file = f"{self.config_dir}/client_metadata/f2net_{client_name}.json"
-            if os.path.exists(metadata_file):
-                with open(metadata_file, 'r') as f:
-                    return json.load(f)
-            return {}
+
+            # Check existence with sudo test -f
+            exists, _, _ = self._run_command([
+                "/usr/bin/sudo", "/usr/bin/test", "-f", metadata_file
+            ])
+
+            if not exists:
+                return {}
+
+            # Read JSON content with sudo cat
+            success, stdout, stderr = self._run_command([
+                "/usr/bin/sudo", "/usr/bin/cat", metadata_file
+            ])
+
+            if not success:
+                logger.warning(
+                    f"Failed to read metadata file for {client_name}: {stderr}"
+                )
+                return {}
+
+            # Parse JSON
+            try:
+                return json.loads(stdout)
+            except Exception as json_error:
+                logger.warning(
+                    f"Invalid JSON metadata for {client_name}: {json_error}"
+                )
+                return {}
+
         except Exception as e:
-            logger.warning(f"Failed to load client metadata for {client_name}", error=str(e))
+            logger.warning(
+                f"Unexpected error loading metadata for {client_name}: {e}"
+            )
             return {}
 
     def _create_client_specific_config(self, client_name: str, client_ip: str):
@@ -344,13 +407,9 @@ class OpenVPNManager:
         """Generate enhanced OpenVPN client configuration file"""
         try:
             # Read certificate files
-            with open(self.ca_cert, 'r') as f:
-                ca_content = f.read()
-
-            with open(f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt", 'r') as f:
-                cert_content = f.read()
-            with open(f"{self.config_dir}/easy-rsa/pki/private/f2net_{client_name}.key", 'r') as f:
-                key_content = f.read()
+            ca_content = self.cert_service.read_item(self.ca_cert)
+            cert_content = self.cert_service.read_certificate(f"f2net_{client_name}")
+            key_content = self.cert_service.read_certificate_key(f"f2net_{client_name}")
 
             # Get server configuration
             temp = self.parse_client_template()
@@ -421,7 +480,7 @@ comp-lzo
                 raise SystemOperationError("Invalid client name format")
 
             # Check if client exists
-            client_cert_path = f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt"
+            client_cert_path = f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt"
             if not os.path.exists(client_cert_path):
                 raise SystemOperationError(f"Client 'f2net_{client_name}' does not exist")
 
@@ -436,8 +495,8 @@ comp-lzo
 
             # Remove client files
             files_to_remove = [
-                f"{self.config_dir}/easy-rsa/pki/issued/f2net_{client_name}.crt",
-                f"{self.config_dir}/easy-rsa/pki/private/f2net_{client_name}.key",
+                f"{self.easy_rsa_dir}/pki/issued/f2net_{client_name}.crt",
+                f"{self.easy_rsa_dir}/pki/private/f2net_{client_name}.key",
                 f"{self.client_config_dir}/f2net_{client_name}.ovpn",
                 f"{self.config_dir}/ccd/f2net_{client_name}",
                 f"{self.config_dir}/client_metadata/f2net_{client_name}.json"
@@ -475,11 +534,22 @@ comp-lzo
                 'removed_files': removed_files
             }
 
-        except SystemOperationError:
-            raise
+        except SystemOperationError as e:
+            logger.error(f"Failed to revoke client certificate for {client_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e),
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
         except Exception as e:
             logger.error(f"Failed to revoke client certificate for {client_name}", error=str(e))
-            raise SystemOperationError(f"Certificate revocation failed: {e}")
+            return {
+                'success': False,
+                'error': f'Certificate revocation failed: {str(e)}',
+                'client_name': client_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
     @audit_system_operation('openvpn_client_disconnect')
     def disconnect_client(self, client_name: str, reason: str = None) -> Dict[str, Any]:
@@ -575,7 +645,7 @@ comp-lzo
     def parse_client_template(self):
         """Parse an OpenVPN configuration file into a structured format"""
         try:
-            config_file = self.config_dir + "/client-template.txt"
+            config_file = self.config_dir + "/server/client-common.txt"
             if not os.path.exists(config_file):
                 return {}
 
@@ -647,58 +717,143 @@ comp-lzo
             logger.error(f"Management interface connection failed for {client_name}", error=str(e))
             return {'success': False, 'error': str(e)}
 
+    # def get_client_list(self) -> List[Dict[str, Any]]:
+    #     """Get enhanced list of all client certificates with metadata"""
+    #     try:
+    #         clients = []
+    #         keys_dir = f"{self.easy_rsa_dir}/pki/private"
+    #
+    #         certs_dir = f"{self.easy_rsa_dir}/pki/issued"
+    #
+    #         if not os.path.exists(keys_dir):
+    #             logger.error(f"Keys directory not found @ {keys_dir}")
+    #             return clients
+    #         # List all client certificate files
+    #         for file in os.listdir(certs_dir):
+    #             if file.endswith('.crt') and file.startswith('f2net_') and file not in ['f2net_server.crt',
+    #                                                                                     'f2net_ca.crt']:
+    #                 logger.info(f"Processing certificate file: {file}")
+    #                 full_client_name = file[:-4]  # Remove .crt extension
+    #                 client_name = full_client_name.replace('f2net_', '', 1)  # Remove f2net_ prefix
+    #
+    #                 cert_path = f"{certs_dir}/{file}"
+    #                 key_path = f"{keys_dir}/{full_client_name}.key"
+    #                 config_path = f"{self.client_config_dir}/{full_client_name}.ovpn"
+    #                 ccd_path = f"{self.config_dir}/ccd/{full_client_name}"
+    #
+    #                 # Get certificate info
+    #                 cert_info = self._get_certificate_info(cert_path)
+    #
+    #                 # Get client metadata
+    #                 metadata = self._load_client_metadata(client_name)
+    #
+    #                 # Get connection info
+    #                 connection_info = self._get_client_connection_info(full_client_name)
+    #
+    #                 clients.append({
+    #                     'name': client_name,
+    #                     'full_name': full_client_name,
+    #                     'certificate_file': cert_path,
+    #                     'key_file': key_path if os.path.exists(key_path) else None,
+    #                     'config_file': config_path if os.path.exists(config_path) else None,
+    #                     'ccd_file': ccd_path if os.path.exists(ccd_path) else None,
+    #                     'created_at': cert_info.get('not_before'),
+    #                     'expires_at': cert_info.get('not_after'),
+    #                     'days_until_expiry': self._calculate_days_until_expiry(cert_info.get('not_after')),
+    #                     'is_valid': cert_info.get('is_valid', False),
+    #                     'serial_number': cert_info.get('serial_number'),
+    #                     'is_connected': connection_info.get('is_connected', False),
+    #                     'connection_info': connection_info,
+    #                     'metadata': metadata,
+    #                     'email': metadata.get('email'),
+    #                     'assigned_ip': metadata.get('assigned_ip'),
+    #                     'created_by': metadata.get('created_by'),
+    #                     'status': metadata.get('status', 'unknown')
+    #                 })
+    #             else:
+    #                 print(file)
+    #
+    #         return sorted(clients, key=lambda x: x['name'])
+    #
+    #     except Exception as e:
+    #         logger.error("Failed to get enhanced client list", error=str(e))
+    #         return []
+
     def get_client_list(self) -> List[Dict[str, Any]]:
-        """Get enhanced list of all client certificates with metadata"""
+        """Get enhanced list of all client certificates with metadata using system service commands only"""
         try:
             clients = []
-            keys_dir = f"{self.config_dir}/easy-rsa/pki/private"
-            certs_dir = f"{self.config_dir}/easy-rsa/pki/issued"
+            certs_dir = f"{self.easy_rsa_dir}/pki/issued"
+            keys_dir = f"{self.easy_rsa_dir}/pki/private"
 
-            if not os.path.exists(keys_dir):
+            # List cert files via sudo
+            success, stdout, stderr = self._run_command([
+                "/usr/bin/sudo", "/usr/bin/ls", certs_dir
+            ])
+
+            if not success:
+                logger.error(f"Unable to list certificates in {certs_dir}: {stderr}")
                 return clients
-            # List all client certificate files
-            for file in os.listdir(certs_dir):
-                if file.endswith('.crt') and file.startswith('f2net_') and file not in ['f2net_server.crt',
-                                                                                        'f2net_ca.crt']:
-                    full_client_name = file[:-4]  # Remove .crt extension
-                    client_name = full_client_name.replace('f2net_', '', 1)  # Remove f2net_ prefix
 
-                    cert_path = f"{certs_dir}/{file}"
-                    key_path = f"{keys_dir}/{full_client_name}.key"
-                    config_path = f"{self.client_config_dir}/{full_client_name}.ovpn"
-                    ccd_path = f"{self.config_dir}/ccd/{full_client_name}"
+            cert_files = stdout.split()
 
-                    # Get certificate info
-                    cert_info = self._get_certificate_info(cert_path)
+            # Process only client certificates
+            for file in cert_files:
+                if not (file.endswith(".crt") and
+                        file.startswith("f2net_") and
+                        file not in ["f2net_server.crt", "f2net_ca.crt"]):
+                    continue
 
-                    # Get client metadata
-                    metadata = self._load_client_metadata(client_name)
+                logger.info(f"Processing certificate file: {file}")
 
-                    # Get connection info
-                    connection_info = self._get_client_connection_info(full_client_name)
+                full_client_name = file[:-4]  # remove .crt
+                client_name = full_client_name.replace("f2net_", "", 1)
 
-                    clients.append({
-                        'name': client_name,
-                        'full_name': full_client_name,
-                        'certificate_file': cert_path,
-                        'key_file': key_path if os.path.exists(key_path) else None,
-                        'config_file': config_path if os.path.exists(config_path) else None,
-                        'ccd_file': ccd_path if os.path.exists(ccd_path) else None,
-                        'created_at': cert_info.get('not_before'),
-                        'expires_at': cert_info.get('not_after'),
-                        'days_until_expiry': self._calculate_days_until_expiry(cert_info.get('not_after')),
-                        'is_valid': cert_info.get('is_valid', False),
-                        'serial_number': cert_info.get('serial_number'),
-                        'is_connected': connection_info.get('is_connected', False),
-                        'connection_info': connection_info,
-                        'metadata': metadata,
-                        'email': metadata.get('email'),
-                        'assigned_ip': metadata.get('assigned_ip'),
-                        'created_by': metadata.get('created_by'),
-                        'status': metadata.get('status', 'unknown')
-                    })
-                else:
-                    print(file)
+                cert_path = f"{certs_dir}/{file}"
+                key_path = f"{keys_dir}/{full_client_name}.key"
+                config_path = f"{self.client_config_dir}/{full_client_name}.ovpn"
+                ccd_path = f"{self.config_dir}/ccd/{full_client_name}"
+
+                # Check file existence using `sudo test -f`
+                def file_exists(path: str) -> bool:
+                    return self._run_command([
+                        "/usr/bin/sudo", "/usr/bin/test", "-f", path
+                    ])[0]
+
+                key_exists = file_exists(key_path)
+                config_exists = file_exists(config_path)
+                ccd_exists = file_exists(ccd_path)
+
+                # Certificate info
+                cert_info = self._get_certificate_info(cert_path)
+
+                # Metadata (stored elsewhere)
+                metadata = self._load_client_metadata(client_name)
+
+                # Connection info
+                connection_info = self._get_client_connection_info(full_client_name)
+
+                # Append entry
+                clients.append({
+                    'name': client_name,
+                    'full_name': full_client_name,
+                    'certificate_file': cert_path,
+                    'key_file': key_path if key_exists else None,
+                    'config_file': config_path if config_exists else None,
+                    'ccd_file': ccd_path if ccd_exists else None,
+                    'created_at': cert_info.get('not_before'),
+                    'expires_at': cert_info.get('not_after'),
+                    'days_until_expiry': self._calculate_days_until_expiry(cert_info.get('not_after')),
+                    'is_valid': cert_info.get('is_valid', False),
+                    'serial_number': cert_info.get('serial_number'),
+                    'is_connected': connection_info.get('is_connected', False),
+                    'connection_info': connection_info,
+                    'metadata': metadata,
+                    'email': metadata.get('email'),
+                    'assigned_ip': metadata.get('assigned_ip'),
+                    'created_by': metadata.get('created_by'),
+                    'status': metadata.get('status', 'unknown')
+                })
 
             return sorted(clients, key=lambda x: x['name'])
 
@@ -796,11 +951,24 @@ comp-lzo
                 'timestamp': datetime.utcnow().isoformat()
             }
 
-        except SystemOperationError:
-            raise
+        except SystemOperationError as e:
+            logger.error(f"Failed to {action} OpenVPN service for {config_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e),
+                'action': action,
+                'config_name': config_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
         except Exception as e:
             logger.error(f"Failed to {action} OpenVPN service for {config_name}", error=str(e))
-            raise SystemOperationError(f"Service control failed: {e}")
+            return {
+                'success': False,
+                'error': f'Service control failed: {str(e)}',
+                'action': action,
+                'config_name': config_name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
     # Keep existing methods with minimal changes
     def _check_port_listening(self, port: int) -> bool:
@@ -817,42 +985,50 @@ comp-lzo
     def _get_connected_clients(self) -> List[Dict[str, Any]]:
         """Get list of connected VPN clients (enhanced version)"""
         try:
-            status_file = f"{self.config_dir}/openvpn-status.log"
+            # Updated to use correct path for OpenVPN 2.6 status file
+            status_file = f"{self.status_file}"
+            logger.info(f"Checking status file: {status_file}")
+            print(f"DEBUG: Checking status file: {status_file}")
 
             if not os.path.exists(status_file):
+                logger.warning(f"Status file does not exist: {status_file}")
+                print(f"DEBUG: Status file missing: {status_file}")
+                # Check if OpenVPN is actually running
+                print(f"DEBUG: Checking if OpenVPN process exists")
                 return []
 
             clients = []
+            logger.info("Reading status file")
 
             with open(status_file, 'r') as f:
                 lines = f.readlines()
+            
+            logger.info(f"Read {len(lines)} lines from status file")
+            print(f"DEBUG: Read {lines} lines from status file")
 
-            # Parse OpenVPN status file
-            in_client_section = False
-
+            # Parse OpenVPN 2.6 status file format
+            # Format: CLIENT_LIST,Common Name,Real Address,Virtual Address,Virtual IPv6,Bytes Received,Bytes Sent,Connected Since,...
+            client_count = 0
             for line in lines:
                 line = line.strip()
 
-                if line.startswith('Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since'):
-                    in_client_section = True
-                    continue
-
-                if line.startswith('ROUTING TABLE'):
-                    in_client_section = False
-                    break
-
-                if in_client_section and line and not line.startswith('TITLE') and ',' in line:
+                # Look for CLIENT_LIST entries (OpenVPN 2.6 format)
+                if line.startswith('CLIENT_LIST,'):
                     parts = line.split(',')
-                    if len(parts) >= 5:
+                    if len(parts) >= 8:
+                        client_count += 1
+                        logger.info(f"Found client {client_count}: {parts[1]}")
                         clients.append({
-                            'common_name': parts[0],
-                            'real_address': parts[1],
-                            'bytes_received': int(parts[2]) if parts[2].isdigit() else 0,
-                            'bytes_sent': int(parts[3]) if parts[3].isdigit() else 0,
-                            'connected_since': parts[4],
-                            'virtual_address': self._get_client_virtual_ip(parts[0])
+                            'common_name': parts[1],
+                            'real_address': parts[2],
+                            'virtual_address': parts[3],
+                            'bytes_received': int(parts[5]) if parts[5].isdigit() else 0,
+                            'bytes_sent': int(parts[6]) if parts[6].isdigit() else 0,
+                            'connected_since': parts[7],
                         })
 
+            logger.info(f"Parsed {len(clients)} connected clients from status file")
+            print(f"DEBUG: Parsed {len(clients)} connected clients from status file")
             return clients
 
         except Exception as e:
@@ -860,22 +1036,25 @@ comp-lzo
             return []
 
     def _get_client_virtual_ip(self, common_name: str) -> str:
-        """Get virtual IP address for a client"""
+        """Get virtual IP address for a client (OpenVPN 2.6 format)"""
         try:
-            status_file = f"{self.config_dir}/openvpn-status.log"
+            # Updated to use correct path for OpenVPN 2.6 status file
+            status_file = f"{self.status_file}"
+
+            if not os.path.exists(status_file):
+                return 'Unknown'
 
             with open(status_file, 'r') as f:
-                content = f.read()
+                lines = f.readlines()
 
-            # Find virtual IP in routing table section
-            routing_section = content.split('ROUTING TABLE')[1].split('GLOBAL STATS')[
-                0] if 'ROUTING TABLE' in content else ''
-
-            for line in routing_section.split('\n'):
-                if common_name in line and ',' in line:
+            # Parse OpenVPN 2.6 ROUTING_TABLE format
+            # Format: ROUTING_TABLE,Virtual Address,Common Name,Real Address,Last Ref,Last Ref (time_t)
+            for line in lines:
+                line = line.strip()
+                if line.startswith('ROUTING_TABLE,'):
                     parts = line.split(',')
-                    if len(parts) >= 2:
-                        return parts[0]
+                    if len(parts) >= 3 and parts[2] == common_name:
+                        return parts[1]  # Virtual Address is field 1
 
             return 'Unknown'
 

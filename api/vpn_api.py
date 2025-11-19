@@ -91,23 +91,29 @@ def get_clients():
 
 
 @vpn_bp.route('/clients/connected', methods=['GET'])
-@api_endpoint(require_auth=True, require_json=False, cache_timeout=10)
+@api_endpoint(require_auth=True, require_json=False, cache_timeout=0)
 def get_connected_clients():
     """
     Get list of currently connected VPN clients
     """
     try:
+        logger.info("Starting connected clients retrieval")
+        print("DEBUG: get_connected_clients endpoint called")
         vpn_manager = OpenVPNManager(current_app)
+        logger.info("OpenVPN manager initialized")
 
-        # Get server status (includes connected clients)
-        status = vpn_manager.check_server_status()
-
-        connected_clients = status.get('client_list', [])
+        # Get connected clients directly
+        print("DEBUG: About to call _get_connected_clients")
+        connected_clients = vpn_manager._get_connected_clients()
+        print(f"DEBUG: _get_connected_clients returned {len(connected_clients)} clients")
+        logger.info(f"Retrieved {len(connected_clients)} connected clients")
 
         # Calculate bandwidth totals
         total_bytes_received = sum(c.get('bytes_received', 0) for c in connected_clients)
         total_bytes_sent = sum(c.get('bytes_sent', 0) for c in connected_clients)
+        logger.info(f"Calculated bandwidth - Received: {total_bytes_received}, Sent: {total_bytes_sent}")
 
+        logger.info("Successfully processed connected clients request")
         return jsonify({
             'success': True,
             'connected_clients': connected_clients,
@@ -190,7 +196,7 @@ def create_client():
         logger.error("Error creating VPN client", error=e or "Unknown error")
         return jsonify({
             'success': False,
-            'error': 'Internal server error'
+            'error': 'Internal server error 56'
         })
 
 

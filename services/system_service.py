@@ -95,7 +95,7 @@ class OpenVPNService(SystemService):
 
             # Use management script to deploy
             success, stdout, stderr = self._run_command([
-                'sudo',
+                '/usr/bin/sudo',
                 str(self.scripts_dir / 'manage_openvpn.sh'),
                 'deploy_config',
                 config_name
@@ -123,7 +123,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_openvpn.sh'),
             'remove_config',
             config_name
@@ -144,7 +144,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'start', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'start', f'openvpn@server'
         ])
 
         if not success:
@@ -161,7 +161,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'restart', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'restart', f'openvpn@server'
         ])
 
         if not success:
@@ -179,7 +179,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'stop', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'stop', f'openvpn@server'
         ])
 
         if not success:
@@ -197,7 +197,7 @@ class OpenVPNService(SystemService):
             raise SystemOperationError("Invalid config name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'status', f'openvpn@server'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'status', f'openvpn@server'
         ])
 
         # Status command returns non-zero for inactive services, so we parse output
@@ -214,12 +214,54 @@ class OpenVPNService(SystemService):
 class CertificateService(SystemService):
     """Service for managing certificates"""
 
+    def read_certificate(self, cert_name: str) -> str:
+        """Read certificate content securely"""
+        if not self._validate_input(cert_name, r'^f2net_[a-zA-Z0-9_-]+$'):
+            raise SystemOperationError("Invalid certificate name format")
+
+        cert_path = f"/etc/openvpn/server/easy-rsa/pki/issued/{cert_name}.crt"
+
+        success, stdout, stderr = self._run_command([
+            '/usr/bin/sudo', '/usr/bin/cat', cert_path
+        ])
+
+        if not success:
+            raise SystemOperationError(f"Failed to read certificate {cert_name}: {stderr}")
+
+        return stdout
+    def read_certificate_key(self, key_name: str) -> str:
+        """Read certificate content securely"""
+        if not self._validate_input(key_name, r'^f2net_[a-zA-Z0-9_-]+$'):
+            raise SystemOperationError("Invalid certificate name format")
+
+        key_path = f"/etc/openvpn/server/easy-rsa/pki/private/{key_name}.key"
+
+        success, stdout, stderr = self._run_command([
+            '/usr/bin/sudo', '/usr/bin/cat', key_path
+        ])
+
+        if not success:
+            raise SystemOperationError(f"Failed to read certificate ->  {key_name}: {stderr}")
+
+        return stdout
+
+    def read_item(self, item_path: str) -> str:
+        """Read certificate content securely"""
+        success, stdout, stderr = self._run_command([
+            '/usr/bin/sudo', '/usr/bin/cat',item_path
+        ])
+
+        if not success:
+            raise SystemOperationError(f"Failed to item @  {item_path}: {stderr}")
+
+        return stdout
+
     def generate_client_cert(self, cert_name: str) -> Dict:
         """Generate client certificate"""
         if not self._validate_input(cert_name, r'^f2net_[a-zA-Z0-9_-]+$'):
             raise SystemOperationError("Invalid certificate name format")
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_certificates.sh'),
             'generate_client',
             cert_name
@@ -235,13 +277,13 @@ class CertificateService(SystemService):
 
                 # Remove the existing request file
                 cleanup_success, _, cleanup_stderr = self._run_command([
-                    'sudo', 'rm', '-f', req_file_path
+                    '/usr/bin/sudo', '/usr/bin/rm', '-f', req_file_path
                 ])
 
                 if cleanup_success:
                     # Retry the certificate generation
                     success, stdout, stderr = self._run_command([
-                        'sudo',
+                        '/usr/bin/sudo',
                         str(self.scripts_dir / 'manage_certificates.sh'),
                         'generate_client',
                         cert_name
@@ -272,6 +314,7 @@ class CertificateService(SystemService):
         match = re.search(pattern, stderr)
         return match.group(1).strip() if match else None
 
+
     # Alternative: Reuse existing request instead of removing it
     def generate_client_cert_reuse_request(self, cert_name: str) -> Dict:
         """Generate client certificate, reusing existing request if available"""
@@ -279,7 +322,7 @@ class CertificateService(SystemService):
             raise SystemOperationError("Invalid certificate name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_certificates.sh'),
             'generate_client',
             cert_name
@@ -291,7 +334,7 @@ class CertificateService(SystemService):
 
             # Use sign-req command instead of build-client-full
             success, stdout, stderr = self._run_command([
-                'sudo',
+                '/usr/bin/sudo',
                 str(self.scripts_dir / 'manage_certificates.sh'),
                 "sign_client",
                 cert_name
@@ -319,7 +362,7 @@ class CertificateService(SystemService):
             raise SystemOperationError("Invalid certificate name format")
 
         success, stdout, stderr = self._run_command([
-            'sudo',
+            '/usr/bin/sudo',
             str(self.scripts_dir / 'manage_certificates.sh'),
             'revoke_client',
             cert_name
@@ -347,7 +390,7 @@ class NetworkService(SystemService):
             if param.startswith('-') and param not in allowed_params:
                 raise SystemOperationError(f"Parameter not allowed: {param}")
 
-        command = ['sudo', 'iptables'] + rule_params
+        command = ['/usr/bin/sudo', '/usr/sbin/iptables'] + rule_params
         success, stdout, stderr = self._run_command(command)
 
         if not success:
@@ -368,7 +411,7 @@ class NetworkService(SystemService):
         if not self._validate_input(gateway, r'^(\d{1,3}\.){3}\d{1,3}$'):
             raise SystemOperationError("Invalid gateway format")
 
-        command = ['sudo', 'ip', 'route', 'add', destination, 'via', gateway]
+        command = ['/usr/bin/sudo', '/usr/sbin/ip', 'route', 'add', destination, 'via', gateway]
         if interface:
             if not self._validate_input(interface, r'^[a-zA-Z0-9]+$'):
                 raise SystemOperationError("Invalid interface name")
@@ -393,7 +436,7 @@ class FreeRADIUSService(SystemService):
     def start_service(self) -> Dict:
         """Start FreeRADIUS service"""
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'start', 'freeradius'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'start', 'freeradius'
         ])
 
         if not success:
@@ -408,7 +451,7 @@ class FreeRADIUSService(SystemService):
     def stop_service(self) -> Dict:
         """Stop FreeRADIUS service"""
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'stop', 'freeradius'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'stop', 'freeradius'
         ])
 
         if not success:
@@ -423,7 +466,7 @@ class FreeRADIUSService(SystemService):
     def restart_service(self) -> Dict:
         """Restart FreeRADIUS service"""
         success, stdout, stderr = self._run_command([
-            'sudo', 'systemctl', 'restart', 'freeradius'
+            '/usr/bin/sudo', '/usr/bin/systemctl', 'restart', 'freeradius'
         ])
 
         if not success:

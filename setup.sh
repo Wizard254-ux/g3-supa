@@ -460,11 +460,60 @@ f2net_isp ALL=(root) NOPASSWD: /sbin/iptables *
 f2net_isp ALL=(root) NOPASSWD: /sbin/ip *
 
 # File access for reading logs and configs
+# Allow both /bin and /usr/bin paths for compatibility
 f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /bin/cat /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /etc/openvpn/client_metadata/*
 f2net_isp ALL=(root) NOPASSWD: /bin/tail /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/tail /etc/openvpn/*
 f2net_isp ALL=(root) NOPASSWD: /bin/tail /var/log/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/tail /var/log/*
 f2net_isp ALL=(root) NOPASSWD: /bin/cat /var/log/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/cat /var/log/*
+
+# Directory listing permissions
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /bin/ls /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/ls /etc/openvpn/client_metadata/*
+
+# File existence checks (secure - no content exposure)
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/server/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/server/easy-rsa/pki/issued/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/server/easy-rsa/pki/private/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/clients/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -f /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -f /etc/openvpn/client_metadata/*
+f2net_isp ALL=(root) NOPASSWD: /bin/test -d /etc/openvpn/*
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/test -d /etc/openvpn/*
+
+# OpenSSL operations
 f2net_isp ALL=(root) NOPASSWD: /usr/bin/openssl *
+
+# Journalctl for log access
+f2net_isp ALL=(root) NOPASSWD: /usr/bin/journalctl -u openvpn@* -n * --no-pager
+f2net_isp ALL=(root) NOPASSWD: /bin/journalctl -u openvpn@* -n * --no-pager
 
 # Custom scripts (recommended approach)
 f2net_isp ALL=(root) NOPASSWD: /opt/f2net_isp/scripts/
@@ -557,26 +606,26 @@ validate_cert_name() {
 case "$ACTION" in
     "generate_client")
         validate_cert_name "$CERT_NAME"
-        cd /etc/openvpn/easy-rsa/ || exit 1
+        cd /etc/openvpn/server/easy-rsa/ || exit 1
         echo "yes" | ./easyrsa build-client-full "$CERT_NAME" nopass
         echo "Client certificate generated: ${CERT_NAME}"
         ;;
     "revoke_client")
         validate_cert_name "$CERT_NAME"
-        cd /etc/openvpn/easy-rsa/ || exit 1
+        cd /etc/openvpn/server/easy-rsa/ || exit 1
         echo "yes" | ./easyrsa revoke "$CERT_NAME"
         echo "yes" | ./easyrsa gen-crl
         echo "Client certificate revoked: ${CERT_NAME}"
         ;;
     "sign_client")
         validate_cert_name "$CERT_NAME"
-        cd /etc/openvpn/easy-rsa/ || exit 1
+        cd /etc/openvpn/server/easy-rsa/ || exit 1
         echo "Signing existing client request: $CERT_NAME"
         echo "yes" | ./easyrsa sign-req client "$CERT_NAME"
         ;;
     "list_certificates")
-        if [[ -f "/etc/openvpn/easy-rsa/pki/ca.crt" ]]; then
-            openssl x509 -in /etc/openvpn/easy-rsa/pki/ca.crt -noout -text
+        if [[ -f "/etc/openvpn/server/easy-rsa/pki/ca.crt" ]]; then
+            openssl x509 -in /etc/openvpn/server/easy-rsa/pki/ca.crt -noout -text
         else
             echo "CA certificate not found"
         fi
@@ -710,13 +759,53 @@ create_directories() {
     mkdir -p "$CONFIG_DIR/nginx"
     mkdir -p "$CONFIG_DIR/supervisor"
 
+    # Create and set permissions for OpenVPN directories
+    # These directories are needed by the application to store client configs
+    print_status "Setting up OpenVPN directories for $APP_USER"
+
+    # Create /etc/openvpn if it doesn't exist and set proper permissions
+    mkdir -p /etc/openvpn
+    chmod 755 /etc/openvpn
+    print_status "Created /etc/openvpn base directory"
+
+    # Create clients directory
+    mkdir -p /etc/openvpn/clients
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/clients
+    chmod 775 /etc/openvpn/clients
+    print_status "Set permissions for /etc/openvpn/clients (775, owned by $APP_USER)"
+
+    # Create client_metadata directory
+    mkdir -p /etc/openvpn/client_metadata
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/client_metadata
+    chmod 775 /etc/openvpn/client_metadata
+    print_status "Set permissions for /etc/openvpn/client_metadata (775, owned by $APP_USER)"
+
+    # Create ccd directory if needed
+    mkdir -p /etc/openvpn/ccd
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/ccd
+    chmod 775 /etc/openvpn/ccd
+    print_status "Set permissions for /etc/openvpn/ccd (775, owned by $APP_USER)"
+
+    # Create keys directory
+    mkdir -p /etc/openvpn/keys
+    chown -R "$APP_USER:$APP_USER" /etc/openvpn/keys
+    chmod 775 /etc/openvpn/keys
+    print_status "Set permissions for /etc/openvpn/keys (775, owned by $APP_USER)"
+
+    # Verify permissions were set correctly
+    if [ -w /etc/openvpn/clients ] && [ -w /etc/openvpn/client_metadata ] && [ -w /etc/openvpn/ccd ] && [ -w /etc/openvpn/keys ]; then
+        print_success "All OpenVPN directories are writable by $APP_USER"
+    else
+        print_warning "Some OpenVPN directories may not be writable. Check permissions manually."
+    fi
+
     # Set permissions
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
     chown -R "$APP_USER:$APP_USER" "$LOG_DIR"
     chown -R "$APP_USER:$APP_USER" "$BACKUP_DIR"
     chown -R "$APP_USER:$APP_USER" "/var/uploads/f2net_isp"
 
-    print_success "Directories created"
+    print_success "Directories created and permissions set"
 }
 
 setup_database() {
@@ -796,49 +885,110 @@ EOF
     print_success "Python application installed"
 }
 
+check_env_file() {
+    print_header "Checking .env file"
+
+    local source_env="$APP_DIR/.env"
+
+    if [[ ! -f "$source_env" ]]; then
+        print_error ".env file not found at $source_env"
+        print_error "Setup cannot continue without .env file"
+        print_status "Please create .env file with required environment variables"
+        print_status ""
+        print_status "You can create a template with:"
+        print_status "  cp .env.example .env"
+        print_status ""
+        print_status "Required variables:"
+        echo "  - SECRET_KEY"
+        echo "  - JWT_SECRET_KEY"
+        echo "  - DATABASE_URL"
+        echo "  - REDIS_URL"
+        echo "  - OPENVPN_SERVER_HOST"
+        exit 1
+    fi
+
+    print_success ".env file found at $source_env"
+}
+
+validate_env_file() {
+    print_header "Validating .env configuration"
+
+    local source_env="$APP_DIR/.env"
+    local required_vars=("SECRET_KEY" "DATABASE_URL" "REDIS_URL")
+    local missing_vars=()
+
+    for var in "${required_vars[@]}"; do
+        if ! grep -q "^${var}=" "$source_env" 2>/dev/null; then
+            missing_vars+=("$var")
+        fi
+    done
+
+    if [[ ${#missing_vars[@]} -gt 0 ]]; then
+        print_warning "Missing required variables in .env file:"
+        for var in "${missing_vars[@]}"; do
+            echo "  - $var"
+        done
+        echo ""
+        read -p "Generate missing SECRET_KEY and JWT_SECRET_KEY automatically? (Y/n): " generate_keys
+        if [[ ! "$generate_keys" =~ ^[Nn]$ ]]; then
+            generate_missing_keys "$source_env"
+        else
+            print_error "Cannot proceed without required environment variables"
+            exit 1
+        fi
+    fi
+
+    print_success "Environment file validation passed"
+}
+
+generate_missing_keys() {
+    local env_file="$1"
+    print_status "Generating missing secret keys..."
+
+    # Backup .env file
+    cp "$env_file" "$env_file.backup.$(date +%Y%m%d_%H%M%S)"
+
+    # Generate and add SECRET_KEY if missing
+    if ! grep -q "^SECRET_KEY=" "$env_file" 2>/dev/null; then
+        echo "" >> "$env_file"
+        echo "# Generated by setup script on $(date)" >> "$env_file"
+        echo "SECRET_KEY=$(openssl rand -hex 32)" >> "$env_file"
+        print_success "SECRET_KEY generated"
+    fi
+
+    # Generate and add JWT_SECRET_KEY if missing
+    if ! grep -q "^JWT_SECRET_KEY=" "$env_file" 2>/dev/null; then
+        echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$env_file"
+        print_success "JWT_SECRET_KEY generated"
+    fi
+}
+
 setup_environment() {
     print_header "Setting up environment configuration"
 
-    # Create environment file
-    cat > "$CONFIG_DIR/f2net_isp.env" << EOF
-# F2Net Environment Configuration
-FLASK_ENV=production
-FLASK_HOST=127.0.0.1
-FLASK_PORT=5000
-FLASK_DEBUG=False
-SECRET_KEY=$(openssl rand -hex 32)
-JWT_SECRET_KEY=$(openssl rand -hex 32)
+    local source_env="$APP_DIR/.env"
+    local target_env="$CONFIG_DIR/f2net_isp.env"
 
-# Database
-DATABASE_URL=postgresql://isp_user:isp_password@localhost:5432/f2net_isp
+    # Validate source .env file exists and has required variables
+    check_env_file
+    validate_env_file
 
-# Redis
-REDIS_URL=redis://localhost:6379/0
+    # Copy .env file to config directory
+    print_status "Copying .env to $target_env"
+    cp "$source_env" "$target_env"
 
-# Logging
-LOG_LEVEL=INFO
-LOG_FILE=$LOG_DIR/app.log
+    # Set secure permissions
+    chown "$APP_USER:$APP_USER" "$target_env"
+    chmod 600 "$target_env"
 
-# Security
-ALLOWED_IPS=127.0.0.1,192.168.0.0/16,10.0.0.0/8
+    print_success "Environment configuration installed from .env file"
 
-# OpenVPN Configuration
-OPENVPN_CONFIG_DIR=/etc/openvpn
-OPENVPN_CLIENT_CONFIG_DIR=/etc/openvpn/clients
-OPENVPN_CA_CERT=/etc/openvpn/ca.crt
-OPENVPN_SERVER_CERT=/etc/openvpn/server.crt
-OPENVPN_SERVER_KEY=/etc/openvpn/server.key
-OPENVPN_DH_PARAMS=/etc/openvpn/dh2048.pem
-OPENVPN_SERVER_IP=10.8.0.0
-OPENVPN_SERVER_MASK=255.255.255.0
-OPENVPN_SERVER_HOST=your-server-ip
-OPENVPN_SERVER_PORT=1194
-EOF
-
-    chown "$APP_USER:$APP_USER" "$CONFIG_DIR/f2net_isp.env"
-    chmod 600 "$CONFIG_DIR/f2net_isp.env"
-
-    print_success "Environment configuration created"
+    # Display current configuration (sanitized)
+    print_status "Current configuration summary:"
+    echo "  FLASK_ENV: $(grep '^FLASK_ENV=' "$target_env" 2>/dev/null | cut -d'=' -f2 || echo 'production (default)')"
+    echo "  DATABASE_URL: $(grep '^DATABASE_URL=' "$target_env" 2>/dev/null | cut -d'=' -f2 | sed 's/:.*@/:***@/' || echo 'Not set')"
+    echo "  REDIS_URL: $(grep '^REDIS_URL=' "$target_env" 2>/dev/null | cut -d'=' -f2 || echo 'Not set')"
+    echo "  OPENVPN_CONFIG_DIR: $(grep '^OPENVPN_CONFIG_DIR=' "$target_env" 2>/dev/null | cut -d'=' -f2 || echo '/etc/openvpn (default)')"
 }
 
 setup_nginx() {
@@ -1564,8 +1714,43 @@ else
 	esac
 fi
 
-    print_success "OpenVPN prepared (manual configuration required)"
-    print_warning "Don't forget to initialize PKI and generate certificates"
+    # Set proper permissions for app to have full ownership
+    if [[ -d "/etc/openvpn/server" ]]; then
+        print_status "Setting OpenVPN full ownership recursively for $APP_USER..."
+
+        # Recursively set full ownership to app user on entire server directory
+        chown -R $APP_USER:$APP_USER /etc/openvpn/server
+        print_status "Set full ownership recursively to $APP_USER:$APP_USER"
+
+        # Recursively set all directories to be fully accessible (755)
+        find /etc/openvpn/server -type d -exec chmod 755 {} \;
+        print_status "Set all directories to 755 (rwxr-xr-x)"
+
+        # Recursively set all files to be readable/writable by app user (644)
+        find /etc/openvpn/server -type f -exec chmod 644 {} \;
+        print_status "Set all files to 644 (rw-r--r--)"
+
+        # Make easyrsa and other scripts executable
+        if [[ -f "/etc/openvpn/server/easy-rsa/easyrsa" ]]; then
+            chmod 755 /etc/openvpn/server/easy-rsa/easyrsa
+            print_status "Set easyrsa script as executable (755)"
+        fi
+
+        # Secure all private keys - keep ownership but restrict permissions
+        find /etc/openvpn/server -type f -name "*.key" -exec chmod 600 {} \;
+        print_status "Secured all private keys to 600 (rw-------)"
+
+        # Secure private key directory
+        if [[ -d "/etc/openvpn/server/easy-rsa/pki/private" ]]; then
+            chmod 700 /etc/openvpn/server/easy-rsa/pki/private
+            print_status "Secured private key directory to 700 (rwx------)"
+        fi
+
+        print_success "OpenVPN full ownership configured for $APP_USER (recursive)"
+    fi
+
+    print_success "OpenVPN installation and configuration completed"
+    print_warning "Remember to update OPENVPN_SERVER_HOST in your .env file with your server's public IP/hostname"
 }
 
 setup_freeradius() {
