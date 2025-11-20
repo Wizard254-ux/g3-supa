@@ -1076,20 +1076,24 @@ class MikroTikService:
             
             # 5. Create PPPoE profile
             pppoe_profile = api.path('/ppp/profile')
-            profile_config = {
-                'name': f'{isp_brand}-pppoe-profile',
-                'local-address': config['local_address'],
-                'remote-address': pool_name,
-                'use-encryption': 'yes' if config['use_encryption'] else 'no',
-                'comment': f'Created by {isp_brand}'
-            }
+            profile_name = f'{isp_brand}-pppoe-profile'
             
-            existing_profile = list(pppoe_profile.select('name').where('name', f'{isp_brand}-pppoe-profile'))
-            if not existing_profile:
+            # Get all profiles first
+            all_profiles = list(pppoe_profile.select('name'))
+            profile_names = [p.get('name', '') for p in all_profiles]
+            
+            if profile_name not in profile_names:
+                profile_config = {
+                    'name': profile_name,
+                    'local-address': config['local_address'],
+                    'remote-address': pool_name,
+                    'use-encryption': 'yes' if config['use_encryption'] else 'no',
+                    'comment': f'Created by {isp_brand}'
+                }
                 pppoe_profile.add(**profile_config)
-                setup_results.append("Created PPPoE profile")
+                setup_results.append(f"Created PPPoE profile {profile_name}")
             else:
-                setup_results.append("PPPoE profile exists")
+                setup_results.append(f"PPPoE profile {profile_name} exists")
             
             # 6. Configure PPPoE server
             pppoe_server = api.path('/interface/pppoe-server/server')
@@ -1208,21 +1212,25 @@ class MikroTikService:
             
             # 5. Create hotspot profile
             hotspot_profile = api.path('/ip/hotspot/profile')
-            profile_config = {
-                'name': f'{isp_brand}-hotspot-profile',
-                'hotspot-address': '172.31.0.1',
-                'dns-name': 'router.local',
-                'html-directory': 'hotspot',
-                'login-by': 'http-chap,http-pap',
-                'comment': f'Created by {isp_brand}'
-            }
+            profile_name = f'{isp_brand}-hotspot-profile'
             
-            existing_profile = list(hotspot_profile.select('name').where('name', f'{isp_brand}-hotspot-profile'))
-            if not existing_profile:
+            # Get all profiles first
+            all_profiles = list(hotspot_profile.select('name'))
+            profile_names = [p.get('name', '') for p in all_profiles]
+            
+            if profile_name not in profile_names:
+                profile_config = {
+                    'name': profile_name,
+                    'hotspot-address': '172.31.0.1',
+                    'dns-name': 'router.local',
+                    'html-directory': 'hotspot',
+                    'login-by': 'http-chap,http-pap',
+                    'comment': f'Created by {isp_brand}'
+                }
                 hotspot_profile.add(**profile_config)
-                setup_results.append("Created hotspot profile")
+                setup_results.append(f"Created hotspot profile {profile_name}")
             else:
-                setup_results.append("Hotspot profile exists")
+                setup_results.append(f"Hotspot profile {profile_name} exists")
             
             # 6. Configure hotspot server
             hotspot = api.path('/ip/hotspot')
