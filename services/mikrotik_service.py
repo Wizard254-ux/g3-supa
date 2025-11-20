@@ -910,10 +910,14 @@ class MikroTikService:
                 
                 if not bridge_addresses:
                     network_parts = network_address.split('/')
+                    # For 172.31.0.1/16, network should be 172.31.0.0
+                    ip_parts = network_parts[0].split('.')
+                    network = f"{ip_parts[0]}.{ip_parts[1]}.0.0"
+                    
                     ip_address.add(
                         address=network_address,
                         interface=bridge_name,
-                        network=f"{network_parts[0].rsplit('.', 1)[0]}.0.0"
+                        network=network
                     )
                     setup_results.append("IP Address assigned")
                     logger.info(f"Assigned IP {network_address} to {bridge_name}")
