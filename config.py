@@ -142,6 +142,11 @@ class Config:
     PROMETHEUS_METRICS = config('PROMETHEUS_METRICS', default=True, cast=bool)
     METRICS_PORT = config('METRICS_PORT', default=9090, cast=int)
 
+    # ISP Brand Configuration
+    ISP_BRAND = config('ISP_BRAND', default='f2net')
+    ISP_BRIDGE_NAME = f"{ISP_BRAND}_bridge"
+    ISP_POOL_NAME = f"{ISP_BRAND}_pool"
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""

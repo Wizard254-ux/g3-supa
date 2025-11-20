@@ -152,7 +152,8 @@ def devices_status():
                     common_name = parts[1]
                     # Check if this matches any requested device
                     for device_name in device_names:
-                        full_device_name = f"f2net_{device_name}"
+                        isp_brand = current_app.config.get('ISP_BRAND', 'f2net')
+                        full_device_name = f"{isp_brand}_{device_name}"
                         if common_name == device_name or common_name == full_device_name:
                             vpn_info = None
                             if len(parts) >= 8:
@@ -219,7 +220,8 @@ def device_current_status(device_name):
         # Parse CLIENT_LIST entries like the OpenVPN manager does
         is_connected = False
         vpn_connection_info = None
-        full_device_name = f"f2net_{device_name}"
+        isp_brand = current_app.config.get('ISP_BRAND', 'f2net')
+        full_device_name = f"{isp_brand}_{device_name}"
         
         logger.info(f"Checking for device: {device_name} or {full_device_name}")
         
@@ -878,37 +880,51 @@ def create_bridge():
 @api_endpoint(
     require_auth=True,
     require_json=True,
-    required_fields=['bridge_name', 'interface']
+    required_fields=['username', 'password', 'host', 'interface']
 )
 def add_bridge_port():
     """
-    Add interface to bridge
+    Add interface to ISP bridge
     """
     try:
         data = g.validated_data
-        bridge_name = data['bridge_name']
+        username = data['username']
+        password = data['password']
+        host = data['host']
+        port = data.get('port', 8728)
         interface = data['interface']
-        device_name = data.get('device_name', 'core_router')
+        
+        # Use configurable bridge name
+        isp_brand = current_app.config.get('ISP_BRAND', 'f2net')
+        bridge_name = current_app.config.get('ISP_BRIDGE_NAME', f'{isp_brand}_bridge')
+        
+        logger.info(f"Adding interface {interface} to bridge {bridge_name}")
         
         mikrotik_service = MikroTikService(current_app)
-        result = mikrotik_service.add_bridge_port(bridge_name, interface, device_name)
+        result = mikrotik_service.add_bridge_port_dynamic(
+            username, password, host, port, bridge_name, interface
+        )
         
         if result['success']:
+            logger.info(f"Successfully added {interface} to {bridge_name}")
             return jsonify({
                 'success': True,
-                'message': f'Interface {interface} added to bridge {bridge_name}'
+                'message': f'Interface {interface} added to bridge {bridge_name}',
+                'bridge_name': bridge_name,
+                'interface': interface
             }), 200
         else:
+            logger.error(f"Failed to add {interface} to {bridge_name}: {result.get('error')}")
             return jsonify({
                 'success': False,
                 'error': result.get('error')
             }), 500
             
     except Exception as e:
-        logger.error("Error adding bridge port", error=str(e))
+        logger.error(f"Exception in bridge/add-port: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': 'Internal server error'
+            'error': f'Internal server error: {str(e)}'
         }), 500
 
 
@@ -916,7 +932,7 @@ def add_bridge_port():
 @api_endpoint(
     require_auth=True,
     require_json=True,
-    required_fields=['interface', 'service_name']
+    required_fields=['username', 'password', 'host', 'interface', 'service_name']
 )
 def configure_pppoe_server():
     """
@@ -924,38 +940,51 @@ def configure_pppoe_server():
     """
     try:
         data = g.validated_data
+        username = data['username']
+        password = data['password']
+        host = data['host']
+        port = data.get('port', 8728)
         interface = data['interface']
         service_name = data['service_name']
-        device_name = data.get('device_name', 'core_router')
+        
+        # Use configurable pool name
+        isp_brand = current_app.config.get('ISP_BRAND', 'f2net')
+        pool_name = current_app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
         
         config = {
             'local_address': data.get('local_address', '172.31.0.1'),
-            'remote_address': data.get('remote_address', 'hotspot-pool'),
+            'remote_address': data.get('remote_address', pool_name),
             'use_encryption': data.get('use_encryption', True),
             'authentication': data.get('authentication', 'pap,chap,mschap1,mschap2'),
             'keepalive_timeout': data.get('keepalive_timeout', 60)
         }
         
+        logger.info(f"Configuring PPPoE server on {interface} with pool {pool_name}")
+        
         mikrotik_service = MikroTikService(current_app)
-        result = mikrotik_service.configure_pppoe_server(interface, service_name, config, device_name)
+        result = mikrotik_service.configure_pppoe_server_dynamic(
+            username, password, host, port, interface, service_name, config
+        )
         
         if result['success']:
+            logger.info(f"PPPoE server configured successfully on {interface}")
             return jsonify({
                 'success': True,
                 'message': f'PPPoE server configured on {interface}',
                 'server_details': result
             }), 201
         else:
+            logger.error(f"Failed to configure PPPoE server: {result.get('error')}")
             return jsonify({
                 'success': False,
                 'error': result.get('error')
             }), 500
             
     except Exception as e:
-        logger.error("Error configuring PPPoE server", error=str(e))
+        logger.error(f"Exception in pppoe/server/configure: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': 'Internal server error'
+            'error': f'Internal server error: {str(e)}'
         }), 500
 
 
@@ -963,7 +992,7 @@ def configure_pppoe_server():
 @api_endpoint(
     require_auth=True,
     require_json=True,
-    required_fields=['interface', 'hotspot_name']
+    required_fields=['username', 'password', 'host', 'interface', 'hotspot_name']
 )
 def configure_hotspot_server():
     """
@@ -971,38 +1000,51 @@ def configure_hotspot_server():
     """
     try:
         data = g.validated_data
+        username = data['username']
+        password = data['password']
+        host = data['host']
+        port = data.get('port', 8728)
         interface = data['interface']
         hotspot_name = data['hotspot_name']
-        device_name = data.get('device_name', 'core_router')
+        
+        # Use configurable pool name
+        isp_brand = current_app.config.get('ISP_BRAND', 'f2net')
+        pool_name = current_app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
         
         config = {
-            'address_pool': data.get('address_pool', 'hotspot-pool'),
+            'address_pool': data.get('address_pool', pool_name),
             'profile': data.get('profile', 'hotspot-profile'),
             'addresses_per_mac': data.get('addresses_per_mac', 1),
             'idle_timeout': data.get('idle_timeout', 'none'),
             'keepalive_timeout': data.get('keepalive_timeout', '2m')
         }
         
+        logger.info(f"Configuring hotspot server {hotspot_name} on {interface} with pool {pool_name}")
+        
         mikrotik_service = MikroTikService(current_app)
-        result = mikrotik_service.configure_hotspot_server(interface, hotspot_name, config, device_name)
+        result = mikrotik_service.configure_hotspot_server_dynamic(
+            username, password, host, port, interface, hotspot_name, config
+        )
         
         if result['success']:
+            logger.info(f"Hotspot server {hotspot_name} configured successfully on {interface}")
             return jsonify({
                 'success': True,
                 'message': f'Hotspot server {hotspot_name} configured on {interface}',
                 'server_details': result
             }), 201
         else:
+            logger.error(f"Failed to configure hotspot server: {result.get('error')}")
             return jsonify({
                 'success': False,
                 'error': result.get('error')
             }), 500
             
     except Exception as e:
-        logger.error("Error configuring hotspot server", error=str(e))
+        logger.error(f"Exception in hotspot/server/configure: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': 'Internal server error'
+            'error': f'Internal server error: {str(e)}'
         }), 500
 
 

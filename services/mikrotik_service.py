@@ -841,9 +841,14 @@ class MikroTikService:
 
     def setup_f2net_bridge(self, username: str, password: str, host: str, port: int,
                            ip_pool_range: str, network_address: str) -> Dict:
-        """Create f2net_bridge and address pool with dynamic credentials"""
+        """Create ISP bridge and address pool with dynamic credentials"""
         try:
             import librouteros
+            
+            # Get ISP brand from config
+            isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
+            bridge_name = self.app.config.get('ISP_BRIDGE_NAME', f'{isp_brand}_bridge')
+            pool_name = self.app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
             
             # Connect with provided credentials
             api = librouteros.connect(
@@ -855,8 +860,6 @@ class MikroTikService:
             )
             
             setup_results = []
-            bridge_name = 'f2net_bridge'
-            pool_name = 'f2net_pool'
             
             # 1. Create bridge - Fixed logic
             bridge_interface = api.path('/interface/bridge')
@@ -869,7 +872,8 @@ class MikroTikService:
                 if bridge_name not in bridge_names:
                     bridge_interface.add(
                         name=bridge_name,
-                        **{'auto-mac': 'yes'}
+                        **{'auto-mac': 'yes'},
+                        comment=f'Created by {isp_brand}'
                     )
                     setup_results.append("Bridge created")
                     logger.info(f"Created bridge: {bridge_name}")
@@ -917,7 +921,8 @@ class MikroTikService:
                     ip_address.add(
                         address=network_address,
                         interface=bridge_name,
-                        network=network
+                        network=network,
+                        comment=f'{isp_brand} bridge IP'
                     )
                     setup_results.append("IP Address assigned")
                     logger.info(f"Assigned IP {network_address} to {bridge_name}")
@@ -942,6 +947,318 @@ class MikroTikService:
             
         except Exception as e:
             logger.error(f"Failed to setup f2net_bridge", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def add_bridge_port_dynamic(self, username: str, password: str, host: str, port: int,
+                               bridge_name: str, interface: str) -> Dict:
+        """Add interface to bridge with dynamic credentials"""
+        try:
+            import librouteros
+            
+            api = librouteros.connect(
+                host=host, username=username, password=password, port=port, timeout=10
+            )
+            
+            bridge_port = api.path('/interface/bridge/port')
+            
+            # Check if port already exists in any bridge
+            existing = list(bridge_port.select('interface', 'bridge').where('interface', interface))
+            
+            if existing:
+                api.close()
+                return {
+                    'success': False,
+                    'error': f'Interface {interface} already in bridge {existing[0].get("bridge")}'
+                }
+            
+            # Get ISP brand for comment
+            isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
+            
+            bridge_port.add(
+                interface=interface, 
+                bridge=bridge_name,
+                comment=f'Added by {isp_brand}'
+            )
+            
+            api.close()
+            logger.info(f"Added interface {interface} to bridge {bridge_name}")
+            
+            return {
+                'success': True,
+                'interface': interface,
+                'bridge': bridge_name
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to add interface {interface} to bridge {bridge_name}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def configure_pppoe_server_dynamic(self, username: str, password: str, host: str, port: int,
+                                      interface: str, service_name: str, config: Dict) -> Dict:
+        """Configure PPPoE server with all prerequisites (bridge, pool, port assignment)"""
+        try:
+            import librouteros
+            
+            api = librouteros.connect(
+                host=host, username=username, password=password, port=port, timeout=10
+            )
+            
+            isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
+            bridge_name = self.app.config.get('ISP_BRIDGE_NAME', f'{isp_brand}_bridge')
+            pool_name = self.app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
+            
+            setup_results = []
+            
+            # 1. Ensure bridge exists
+            bridge_interface = api.path('/interface/bridge')
+            all_bridges = list(bridge_interface.select('name'))
+            bridge_names = [b.get('name', '') for b in all_bridges]
+            
+            if bridge_name not in bridge_names:
+                bridge_interface.add(
+                    name=bridge_name,
+                    **{'auto-mac': 'yes'},
+                    comment=f'Created by {isp_brand}'
+                )
+                setup_results.append(f"Created bridge {bridge_name}")
+            else:
+                setup_results.append(f"Bridge {bridge_name} exists")
+            
+            # 2. Ensure IP pool exists
+            ip_pool = api.path('/ip/pool')
+            all_pools = list(ip_pool.select('name'))
+            pool_names = [p.get('name', '') for p in all_pools]
+            
+            if pool_name not in pool_names:
+                ip_pool.add(
+                    name=pool_name,
+                    ranges='172.31.0.2-172.31.255.254'
+                )
+                setup_results.append(f"Created pool {pool_name}")
+            else:
+                setup_results.append(f"Pool {pool_name} exists")
+            
+            # 3. Ensure bridge has IP address
+            ip_address = api.path('/ip/address')
+            all_addresses = list(ip_address.select('address', 'interface'))
+            bridge_addresses = [a for a in all_addresses if a.get('interface') == bridge_name]
+            
+            if not bridge_addresses:
+                ip_address.add(
+                    address='172.31.0.1/16',
+                    interface=bridge_name,
+                    network='172.31.0.0',
+                    comment=f'{isp_brand} bridge IP'
+                )
+                setup_results.append(f"Assigned IP to {bridge_name}")
+            else:
+                setup_results.append(f"IP already assigned to {bridge_name}")
+            
+            # 4. Add interface to bridge
+            bridge_port = api.path('/interface/bridge/port')
+            existing_port = list(bridge_port.select('interface', 'bridge').where('interface', interface))
+            
+            if not existing_port:
+                bridge_port.add(
+                    interface=interface,
+                    bridge=bridge_name,
+                    comment=f'Added by {isp_brand}'
+                )
+                setup_results.append(f"Added {interface} to {bridge_name}")
+            else:
+                setup_results.append(f"{interface} already in bridge")
+            
+            # 5. Create PPPoE profile
+            pppoe_profile = api.path('/ppp/profile')
+            profile_config = {
+                'name': f'{isp_brand}-pppoe-profile',
+                'local-address': config['local_address'],
+                'remote-address': pool_name,
+                'use-encryption': 'yes' if config['use_encryption'] else 'no',
+                'comment': f'Created by {isp_brand}'
+            }
+            
+            existing_profile = list(pppoe_profile.select('name').where('name', f'{isp_brand}-pppoe-profile'))
+            if not existing_profile:
+                pppoe_profile.add(**profile_config)
+                setup_results.append("Created PPPoE profile")
+            else:
+                setup_results.append("PPPoE profile exists")
+            
+            # 6. Configure PPPoE server
+            pppoe_server = api.path('/interface/pppoe-server/server')
+            server_config = {
+                'service-name': service_name,
+                'interface': interface,
+                'default-profile': f'{isp_brand}-pppoe-profile',
+                'authentication': config['authentication'],
+                'keepalive-timeout': str(config['keepalive_timeout']),
+                'comment': f'Created by {isp_brand}'
+            }
+            
+            existing_server = list(pppoe_server.select('service-name').where('service-name', service_name))
+            if existing_server:
+                api.close()
+                return {
+                    'success': False,
+                    'error': f'PPPoE server with service name {service_name} already exists'
+                }
+            
+            pppoe_server.add(**server_config)
+            setup_results.append(f"Created PPPoE server {service_name}")
+            
+            api.close()
+            
+            return {
+                'success': True,
+                'interface': interface,
+                'service_name': service_name,
+                'bridge_name': bridge_name,
+                'pool_name': pool_name,
+                'setup_results': setup_results
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to configure PPPoE server on {interface}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def configure_hotspot_server_dynamic(self, username: str, password: str, host: str, port: int,
+                                        interface: str, hotspot_name: str, config: Dict) -> Dict:
+        """Configure hotspot server with all prerequisites (bridge, pool, port assignment)"""
+        try:
+            import librouteros
+            
+            api = librouteros.connect(
+                host=host, username=username, password=password, port=port, timeout=10
+            )
+            
+            isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
+            bridge_name = self.app.config.get('ISP_BRIDGE_NAME', f'{isp_brand}_bridge')
+            pool_name = self.app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
+            
+            setup_results = []
+            
+            # 1. Ensure bridge exists
+            bridge_interface = api.path('/interface/bridge')
+            all_bridges = list(bridge_interface.select('name'))
+            bridge_names = [b.get('name', '') for b in all_bridges]
+            
+            if bridge_name not in bridge_names:
+                bridge_interface.add(
+                    name=bridge_name,
+                    **{'auto-mac': 'yes'},
+                    comment=f'Created by {isp_brand}'
+                )
+                setup_results.append(f"Created bridge {bridge_name}")
+            else:
+                setup_results.append(f"Bridge {bridge_name} exists")
+            
+            # 2. Ensure IP pool exists
+            ip_pool = api.path('/ip/pool')
+            all_pools = list(ip_pool.select('name'))
+            pool_names = [p.get('name', '') for p in all_pools]
+            
+            if pool_name not in pool_names:
+                ip_pool.add(
+                    name=pool_name,
+                    ranges='172.31.0.2-172.31.255.254'
+                )
+                setup_results.append(f"Created pool {pool_name}")
+            else:
+                setup_results.append(f"Pool {pool_name} exists")
+            
+            # 3. Ensure bridge has IP address
+            ip_address = api.path('/ip/address')
+            all_addresses = list(ip_address.select('address', 'interface'))
+            bridge_addresses = [a for a in all_addresses if a.get('interface') == bridge_name]
+            
+            if not bridge_addresses:
+                ip_address.add(
+                    address='172.31.0.1/16',
+                    interface=bridge_name,
+                    network='172.31.0.0',
+                    comment=f'{isp_brand} bridge IP'
+                )
+                setup_results.append(f"Assigned IP to {bridge_name}")
+            else:
+                setup_results.append(f"IP already assigned to {bridge_name}")
+            
+            # 4. Add interface to bridge
+            bridge_port = api.path('/interface/bridge/port')
+            existing_port = list(bridge_port.select('interface', 'bridge').where('interface', interface))
+            
+            if not existing_port:
+                bridge_port.add(
+                    interface=interface,
+                    bridge=bridge_name,
+                    comment=f'Added by {isp_brand}'
+                )
+                setup_results.append(f"Added {interface} to {bridge_name}")
+            else:
+                setup_results.append(f"{interface} already in bridge")
+            
+            # 5. Create hotspot profile
+            hotspot_profile = api.path('/ip/hotspot/profile')
+            profile_config = {
+                'name': f'{isp_brand}-hotspot-profile',
+                'hotspot-address': '172.31.0.1',
+                'dns-name': 'router.local',
+                'html-directory': 'hotspot',
+                'login-by': 'http-chap,http-pap',
+                'comment': f'Created by {isp_brand}'
+            }
+            
+            existing_profile = list(hotspot_profile.select('name').where('name', f'{isp_brand}-hotspot-profile'))
+            if not existing_profile:
+                hotspot_profile.add(**profile_config)
+                setup_results.append("Created hotspot profile")
+            else:
+                setup_results.append("Hotspot profile exists")
+            
+            # 6. Configure hotspot server
+            hotspot = api.path('/ip/hotspot')
+            hotspot_config = {
+                'name': hotspot_name,
+                'interface': interface,
+                'address-pool': pool_name,
+                'profile': f'{isp_brand}-hotspot-profile',
+                'addresses-per-mac': config['addresses_per_mac'],
+                'comment': f'Created by {isp_brand}'
+            }
+            
+            existing_hotspot = list(hotspot.select('name').where('name', hotspot_name))
+            if existing_hotspot:
+                api.close()
+                return {
+                    'success': False,
+                    'error': f'Hotspot {hotspot_name} already exists'
+                }
+            
+            hotspot.add(**hotspot_config)
+            setup_results.append(f"Created hotspot server {hotspot_name}")
+            
+            api.close()
+            
+            return {
+                'success': True,
+                'hotspot_name': hotspot_name,
+                'interface': interface,
+                'bridge_name': bridge_name,
+                'pool_name': pool_name,
+                'setup_results': setup_results
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to configure hotspot server {hotspot_name} on {interface}", error=str(e))
             return {
                 'success': False,
                 'error': str(e)
