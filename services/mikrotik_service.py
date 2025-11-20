@@ -1119,25 +1119,32 @@ class MikroTikService:
             
             # 6. Configure PPPoE server
             pppoe_server = api.path('/interface/pppoe-server/server')
-            server_config = {
-                'service-name': service_name,
-                'interface': interface,
-                'default-profile': f'{isp_brand}-pppoe-profile',
-                'authentication': config['authentication'],
-                'keepalive-timeout': str(config['keepalive_timeout']),
-                'comment': f'Created by {isp_brand}'
-            }
             
-            existing_server = list(pppoe_server.select('service-name').where('service-name', service_name))
+            existing_server = list(pppoe_server.select('.id', 'service-name', 'interface').where('service-name', service_name))
             if existing_server:
-                api.close()
-                return {
-                    'success': False,
-                    'error': f'PPPoE server with service name {service_name} already exists'
+                # Add interface to existing server
+                current_interfaces = existing_server[0].get('interface', '')
+                if interface not in current_interfaces:
+                    new_interfaces = f"{current_interfaces},{interface}" if current_interfaces else interface
+                    pppoe_server.update(
+                        **{'.id': existing_server[0]['.id']},
+                        interface=new_interfaces
+                    )
+                    setup_results.append(f"Added {interface} to existing PPPoE server {service_name}")
+                else:
+                    setup_results.append(f"Interface {interface} already in PPPoE server {service_name}")
+            else:
+                # Create new server
+                server_config = {
+                    'service-name': service_name,
+                    'interface': interface,
+                    'default-profile': f'{isp_brand}-pppoe-profile',
+                    'authentication': config['authentication'],
+                    'keepalive-timeout': str(config['keepalive_timeout']),
+                    'comment': f'Created by {isp_brand}'
                 }
-            
-            pppoe_server.add(**server_config)
-            setup_results.append(f"Created PPPoE server {service_name}")
+                pppoe_server.add(**server_config)
+                setup_results.append(f"Created PPPoE server {service_name}")
             
             api.close()
             
@@ -1269,25 +1276,32 @@ class MikroTikService:
             
             # 6. Configure hotspot server
             hotspot = api.path('/ip/hotspot')
-            hotspot_config = {
-                'name': hotspot_name,
-                'interface': interface,
-                'address-pool': pool_name,
-                'profile': f'{isp_brand}-hotspot-profile',
-                'addresses-per-mac': config['addresses_per_mac'],
-                'comment': f'Created by {isp_brand}'
-            }
             
-            existing_hotspot = list(hotspot.select('name').where('name', hotspot_name))
+            existing_hotspot = list(hotspot.select('.id', 'name', 'interface').where('name', hotspot_name))
             if existing_hotspot:
-                api.close()
-                return {
-                    'success': False,
-                    'error': f'Hotspot {hotspot_name} already exists'
+                # Add interface to existing hotspot
+                current_interfaces = existing_hotspot[0].get('interface', '')
+                if interface not in current_interfaces:
+                    new_interfaces = f"{current_interfaces},{interface}" if current_interfaces else interface
+                    hotspot.update(
+                        **{'.id': existing_hotspot[0]['.id']},
+                        interface=new_interfaces
+                    )
+                    setup_results.append(f"Added {interface} to existing hotspot {hotspot_name}")
+                else:
+                    setup_results.append(f"Interface {interface} already in hotspot {hotspot_name}")
+            else:
+                # Create new hotspot
+                hotspot_config = {
+                    'name': hotspot_name,
+                    'interface': interface,
+                    'address-pool': pool_name,
+                    'profile': f'{isp_brand}-hotspot-profile',
+                    'addresses-per-mac': config['addresses_per_mac'],
+                    'comment': f'Created by {isp_brand}'
                 }
-            
-            hotspot.add(**hotspot_config)
-            setup_results.append(f"Created hotspot server {hotspot_name}")
+                hotspot.add(**hotspot_config)
+                setup_results.append(f"Created hotspot server {hotspot_name}")
             
             api.close()
             
