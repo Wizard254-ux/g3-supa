@@ -954,7 +954,7 @@ class MikroTikService:
 
     def add_bridge_port_dynamic(self, username: str, password: str, host: str, port: int,
                                bridge_name: str, interface: str) -> Dict:
-        """Add interface to bridge with dynamic credentials"""
+        """Add interface to bridge with dynamic credentials - removes from existing bridge first"""
         try:
             import librouteros
             
@@ -965,14 +965,23 @@ class MikroTikService:
             bridge_port = api.path('/interface/bridge/port')
             
             # Check if port already exists in any bridge
-            existing = list(bridge_port.select('interface', 'bridge').where('interface', interface))
+            existing = list(bridge_port.select('.id', 'interface', 'bridge').where('interface', interface))
             
             if existing:
-                api.close()
-                return {
-                    'success': False,
-                    'error': f'Interface {interface} already in bridge {existing[0].get("bridge")}'
-                }
+                current_bridge = existing[0].get('bridge')
+                if current_bridge == bridge_name:
+                    api.close()
+                    return {
+                        'success': True,
+                        'interface': interface,
+                        'bridge': bridge_name,
+                        'message': f'Interface {interface} already in target bridge {bridge_name}'
+                    }
+                
+                # Remove from current bridge
+                port_id = existing[0]['.id']
+                bridge_port.remove(port_id)
+                logger.info(f"Removed interface {interface} from bridge {current_bridge}")
             
             # Get ISP brand for comment
             isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
@@ -1060,19 +1069,34 @@ class MikroTikService:
             else:
                 setup_results.append(f"IP already assigned to {bridge_name}")
             
-            # 4. Add interface to bridge
+            # 4. Add interface to bridge (remove from existing bridge first)
             bridge_port = api.path('/interface/bridge/port')
-            existing_port = list(bridge_port.select('interface', 'bridge').where('interface', interface))
+            existing_port = list(bridge_port.select('.id', 'interface', 'bridge').where('interface', interface))
             
-            if not existing_port:
+            if existing_port:
+                current_bridge = existing_port[0].get('bridge')
+                if current_bridge != bridge_name:
+                    # Remove from current bridge
+                    port_id = existing_port[0]['.id']
+                    bridge_port.remove(port_id)
+                    setup_results.append(f"Removed {interface} from {current_bridge}")
+                    
+                    # Add to new bridge
+                    bridge_port.add(
+                        interface=interface,
+                        bridge=bridge_name,
+                        comment=f'Added by {isp_brand}'
+                    )
+                    setup_results.append(f"Added {interface} to {bridge_name}")
+                else:
+                    setup_results.append(f"{interface} already in {bridge_name}")
+            else:
                 bridge_port.add(
                     interface=interface,
                     bridge=bridge_name,
                     comment=f'Added by {isp_brand}'
                 )
                 setup_results.append(f"Added {interface} to {bridge_name}")
-            else:
-                setup_results.append(f"{interface} already in bridge")
             
             # 5. Create PPPoE profile
             pppoe_profile = api.path('/ppp/profile')
@@ -1196,19 +1220,34 @@ class MikroTikService:
             else:
                 setup_results.append(f"IP already assigned to {bridge_name}")
             
-            # 4. Add interface to bridge
+            # 4. Add interface to bridge (remove from existing bridge first)
             bridge_port = api.path('/interface/bridge/port')
-            existing_port = list(bridge_port.select('interface', 'bridge').where('interface', interface))
+            existing_port = list(bridge_port.select('.id', 'interface', 'bridge').where('interface', interface))
             
-            if not existing_port:
+            if existing_port:
+                current_bridge = existing_port[0].get('bridge')
+                if current_bridge != bridge_name:
+                    # Remove from current bridge
+                    port_id = existing_port[0]['.id']
+                    bridge_port.remove(port_id)
+                    setup_results.append(f"Removed {interface} from {current_bridge}")
+                    
+                    # Add to new bridge
+                    bridge_port.add(
+                        interface=interface,
+                        bridge=bridge_name,
+                        comment=f'Added by {isp_brand}'
+                    )
+                    setup_results.append(f"Added {interface} to {bridge_name}")
+                else:
+                    setup_results.append(f"{interface} already in {bridge_name}")
+            else:
                 bridge_port.add(
                     interface=interface,
                     bridge=bridge_name,
                     comment=f'Added by {isp_brand}'
                 )
                 setup_results.append(f"Added {interface} to {bridge_name}")
-            else:
-                setup_results.append(f"{interface} already in bridge")
             
             # 5. Create hotspot profile
             hotspot_profile = api.path('/ip/hotspot/profile')
