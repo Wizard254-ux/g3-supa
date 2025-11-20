@@ -1287,8 +1287,7 @@ class MikroTikService:
                     'interface': bridge_name,
                     'address-pool': pool_name,
                     'profile': f'{isp_brand}-hotspot-profile',
-                    'addresses-per-mac': config['addresses_per_mac'],
-                    'comment': f'Created by {isp_brand}'
+                    'addresses-per-mac': config['addresses_per_mac']
                 }
                 hotspot.add(**hotspot_config)
                 setup_results.append(f"Created hotspot server {hotspot_name} on bridge {bridge_name}")
