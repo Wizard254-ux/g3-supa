@@ -1261,8 +1261,7 @@ class MikroTikService:
                     'hotspot-address': '172.31.0.1',
                     'dns-name': 'router.local',
                     'html-directory': 'hotspot',
-                    'login-by': 'http-chap,http-pap',
-                    'comment': f'Created by {isp_brand}'
+                    'login-by': 'http-chap,http-pap'
                 }
                 hotspot_profile.add(**profile_config)
                 setup_results.append(f"Created hotspot profile {profile_name}")
