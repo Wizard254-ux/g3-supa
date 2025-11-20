@@ -1117,34 +1117,29 @@ class MikroTikService:
             else:
                 setup_results.append(f"PPPoE profile {profile_name} exists")
             
-            # 6. Configure PPPoE server
+            # 6. Configure PPPoE server on bridge
             pppoe_server = api.path('/interface/pppoe-server/server')
             
-            existing_server = list(pppoe_server.select('.id', 'service-name', 'interface').where('service-name', service_name))
+            existing_server = list(pppoe_server.select('.id', 'service-name').where('service-name', service_name))
             if existing_server:
-                # Add interface to existing server
-                current_interfaces = existing_server[0].get('interface', '')
-                if interface not in current_interfaces:
-                    new_interfaces = f"{current_interfaces},{interface}" if current_interfaces else interface
-                    pppoe_server.update(
-                        **{'.id': existing_server[0]['.id']},
-                        interface=new_interfaces
-                    )
-                    setup_results.append(f"Added {interface} to existing PPPoE server {service_name}")
-                else:
-                    setup_results.append(f"Interface {interface} already in PPPoE server {service_name}")
+                # Update existing server to use bridge
+                pppoe_server.update(
+                    **{'.id': existing_server[0]['.id']},
+                    interface=bridge_name
+                )
+                setup_results.append(f"Updated PPPoE server {service_name} to use bridge {bridge_name}")
             else:
-                # Create new server
+                # Create new server on bridge
                 server_config = {
                     'service-name': service_name,
-                    'interface': interface,
+                    'interface': bridge_name,
                     'default-profile': f'{isp_brand}-pppoe-profile',
                     'authentication': config['authentication'],
                     'keepalive-timeout': str(config['keepalive_timeout']),
                     'comment': f'Created by {isp_brand}'
                 }
                 pppoe_server.add(**server_config)
-                setup_results.append(f"Created PPPoE server {service_name}")
+                setup_results.append(f"Created PPPoE server {service_name} on bridge {bridge_name}")
             
             api.close()
             
@@ -1274,34 +1269,29 @@ class MikroTikService:
             else:
                 setup_results.append(f"Hotspot profile {profile_name} exists")
             
-            # 6. Configure hotspot server
+            # 6. Configure hotspot server on bridge
             hotspot = api.path('/ip/hotspot')
             
-            existing_hotspot = list(hotspot.select('.id', 'name', 'interface').where('name', hotspot_name))
+            existing_hotspot = list(hotspot.select('.id', 'name').where('name', hotspot_name))
             if existing_hotspot:
-                # Add interface to existing hotspot
-                current_interfaces = existing_hotspot[0].get('interface', '')
-                if interface not in current_interfaces:
-                    new_interfaces = f"{current_interfaces},{interface}" if current_interfaces else interface
-                    hotspot.update(
-                        **{'.id': existing_hotspot[0]['.id']},
-                        interface=new_interfaces
-                    )
-                    setup_results.append(f"Added {interface} to existing hotspot {hotspot_name}")
-                else:
-                    setup_results.append(f"Interface {interface} already in hotspot {hotspot_name}")
+                # Update existing hotspot to use bridge
+                hotspot.update(
+                    **{'.id': existing_hotspot[0]['.id']},
+                    interface=bridge_name
+                )
+                setup_results.append(f"Updated hotspot {hotspot_name} to use bridge {bridge_name}")
             else:
-                # Create new hotspot
+                # Create new hotspot on bridge
                 hotspot_config = {
                     'name': hotspot_name,
-                    'interface': interface,
+                    'interface': bridge_name,
                     'address-pool': pool_name,
                     'profile': f'{isp_brand}-hotspot-profile',
                     'addresses-per-mac': config['addresses_per_mac'],
                     'comment': f'Created by {isp_brand}'
                 }
                 hotspot.add(**hotspot_config)
-                setup_results.append(f"Created hotspot server {hotspot_name}")
+                setup_results.append(f"Created hotspot server {hotspot_name} on bridge {bridge_name}")
             
             api.close()
             
