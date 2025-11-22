@@ -347,7 +347,7 @@ def device_status(device_name):
 
                 response_data.update({
                     'system_resources': system_resources,
-                    'interface_stats': interfaces[:5],  # Limit interfaces
+                    'interface_stats': interfaces,  # Return all interfaces
                     'active_users_count': len(active_users),
                     'active_users': active_users[:10]  # Limit to 10
                 })
@@ -956,7 +956,8 @@ def configure_pppoe_server():
             'remote_address': data.get('remote_address', pool_name),
             'use_encryption': data.get('use_encryption', True),
             'authentication': data.get('authentication', 'pap,chap,mschap1,mschap2'),
-            'keepalive_timeout': data.get('keepalive_timeout', 60)
+            'keepalive_timeout': data.get('keepalive_timeout', 60),
+            'auto_enable': data.get('auto_enable', False)
         }
         
         logger.info(f"Configuring PPPoE server on {interface} with pool {pool_name}")
@@ -1016,7 +1017,8 @@ def configure_hotspot_server():
             'profile': data.get('profile', 'hotspot-profile'),
             'addresses_per_mac': data.get('addresses_per_mac', 1),
             'idle_timeout': data.get('idle_timeout', 'none'),
-            'keepalive_timeout': data.get('keepalive_timeout', '2m')
+            'keepalive_timeout': data.get('keepalive_timeout', '2m'),
+            'auto_enable': data.get('auto_enable', False)
         }
         
         logger.info(f"Configuring hotspot server {hotspot_name} on {interface} with pool {pool_name}")

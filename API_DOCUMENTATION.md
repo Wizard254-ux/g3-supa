@@ -250,16 +250,17 @@ All endpoints require API key authentication unless specified otherwise.
 - **Auth**: Required
 - **Body**:
 ```json
+
 {
-  "interface": "bridge-local",
-  "service_name": "service",
-  "local_address": "172.31.0.1",
-  "remote_address": "hotspot-pool",
-  "use_encryption": true,
-  "authentication": "pap,chap,mschap1,mschap2",
-  "keepalive_timeout": 60,
-  "device_name": "core_router"
+  "username": "f2net_user",
+  "password": "4P5NAbgwUrFTxpLJ",
+  "host": "10.8.0.19",
+  "interface": "ether2",
+  "service_name": "fiber-service",
+  "auto_enable":"True"
+  
 }
+
 ```
 
 ### POST `/hotspot/server/configure`
@@ -268,15 +269,14 @@ All endpoints require API key authentication unless specified otherwise.
 - **Body**:
 ```json
 {
-  "interface": "bridge-local",
-  "hotspot_name": "hotspot1",
-  "address_pool": "hotspot-pool",
-  "profile": "hotspot-profile",
-  "addresses_per_mac": 1,
-  "idle_timeout": "none",
-  "keepalive_timeout": "2m",
-  "device_name": "core_router"
+  "username": "f2net_user",
+  "password": "4P5NAbgwUrFTxpLJ",
+  "host": "10.8.0.19",
+  "interface": "ether2",
+  "hotspot_name": "fiber-hotspot",
+  "auto_enable":"True"
 }
+
 ```
 
 ### POST `/network/setup`

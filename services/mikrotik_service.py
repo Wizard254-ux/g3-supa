@@ -1139,7 +1139,11 @@ class MikroTikService:
                     'comment': f'Created by {isp_brand}'
                 }
                 pppoe_server.add(**server_config)
-                setup_results.append(f"Created PPPoE server {service_name} on bridge {bridge_name}")
+                if config.get('auto_enable', False):
+                    pppoe_server.update(**{'.id': '*last'}, disabled='no')
+                    setup_results.append(f"Created and enabled PPPoE server {service_name} on bridge {bridge_name}")
+                else:
+                    setup_results.append(f"Created PPPoE server {service_name} on bridge {bridge_name} (disabled)")
             
             api.close()
             
@@ -1289,7 +1293,11 @@ class MikroTikService:
                     'addresses-per-mac': config['addresses_per_mac']
                 }
                 hotspot.add(**hotspot_config)
-                setup_results.append(f"Created hotspot server {hotspot_name} on bridge {bridge_name}")
+                if config.get('auto_enable', False):
+                    hotspot.update(**{'.id': '*last'}, disabled='no')
+                    setup_results.append(f"Created and enabled hotspot server {hotspot_name} on bridge {bridge_name}")
+                else:
+                    setup_results.append(f"Created hotspot server {hotspot_name} on bridge {bridge_name} (disabled)")
             
             api.close()
             
