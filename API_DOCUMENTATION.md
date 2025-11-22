@@ -307,6 +307,112 @@ All endpoints require API key authentication unless specified otherwise.
 ```
 - **Description**: Prevents users from sharing their hotspot connection with multiple devices using TTL modification to detect and block connection sharing
 
+### POST `/servers/configure-multiple`
+**Configure multiple interfaces as PPPoE or Hotspot servers in a single request**
+- **Auth**: Required
+- **Body**:
+```json
+{
+  "username": "f2net_user",
+  "password": "4P5NAbgwUrFTxpLJ",
+  "host": "10.8.0.19",
+  "port": 8728,
+  "interfaces": [
+    {
+      "interface": "ether2",
+      "type": "pppoe",
+      "service_name": "fiber-service",
+      "auto_enable": true,
+      "config": {
+        "local_address": "172.31.0.1",
+        "use_encryption": true,
+        "authentication": "pap,chap,mschap1,mschap2",
+        "keepalive_timeout": 60
+      }
+    },
+    {
+      "interface": "ether3",
+      "type": "hotspot",
+      "hotspot_name": "fiber-hotspot",
+      "auto_enable": true,
+      "config": {
+        "addresses_per_mac": 1
+      }
+    },
+    {
+      "interface": "wlan1",
+      "type": "hotspot",
+      "hotspot_name": "wifi-hotspot",
+      "auto_enable": false
+    }
+  ]
+}
+```
+- **Response**:
+```json
+{
+  "success": true,
+  "message": "Configured 3/3 interfaces successfully",
+  "bridge_name": "f2net_bridge",
+  "pool_name": "f2net_pool",
+  "global_setup": [
+    "Bridge f2net_bridge exists",
+    "Pool f2net_pool exists",
+    "IP already assigned to f2net_bridge"
+  ],
+  "results": [
+    {
+      "interface": "ether2",
+      "type": "pppoe",
+      "service_name": "fiber-service",
+      "success": true,
+      "message": "PPPoE server fiber-service configured successfully",
+      "setup_steps": [
+        "Added ether2 to f2net_bridge",
+        "PPPoE profile f2net-pppoe-profile exists",
+        "Created and enabled PPPoE server fiber-service"
+      ]
+    },
+    {
+      "interface": "ether3",
+      "type": "hotspot",
+      "hotspot_name": "fiber-hotspot",
+      "success": true,
+      "message": "Hotspot server fiber-hotspot configured successfully",
+      "setup_steps": [
+        "Added ether3 to f2net_bridge",
+        "Hotspot profile f2net-hotspot-profile exists",
+        "Created and enabled hotspot server fiber-hotspot"
+      ]
+    },
+    {
+      "interface": "wlan1",
+      "type": "hotspot",
+      "hotspot_name": "wifi-hotspot",
+      "success": true,
+      "message": "Hotspot server wifi-hotspot configured successfully",
+      "setup_steps": [
+        "Added wlan1 to f2net_bridge",
+        "Hotspot profile f2net-hotspot-profile exists",
+        "Created hotspot server wifi-hotspot (disabled)"
+      ]
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "successful": 3,
+    "failed": 0
+  }
+}
+```
+- **Description**: Flexible endpoint that configures multiple ports in a single request. Each interface can be configured as either PPPoE or Hotspot server. The endpoint:
+  - Creates shared infrastructure (bridge, IP pool) once
+  - Adds each interface to the bridge
+  - Configures each interface based on its type
+  - Returns detailed results for each interface
+  - Supports mixing PPPoE and Hotspot configurations
+  - Optional `config` object for advanced settings (has sensible defaults)
+
 ## System Operations
 
 ### GET `/interfaces`

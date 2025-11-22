@@ -1317,6 +1317,268 @@ class MikroTikService:
                 'error': str(e)
             }
 
+    def configure_multiple_servers_dynamic(self, username: str, password: str, host: str, port: int,
+                                          interfaces_config: List[Dict]) -> Dict:
+        """Configure multiple interfaces as PPPoE or Hotspot servers in a single connection"""
+        try:
+            import librouteros
+
+            api = librouteros.connect(
+                host=host, username=username, password=password, port=port, timeout=10
+            )
+
+            isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
+            bridge_name = self.app.config.get('ISP_BRIDGE_NAME', f'{isp_brand}_bridge')
+            pool_name = self.app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
+
+            global_setup_results = []
+            interface_results = []
+
+            # ===== SHARED PREREQUISITES (Run Once) =====
+
+            # 1. Ensure bridge exists
+            bridge_interface = api.path('/interface/bridge')
+            all_bridges = list(bridge_interface.select('name'))
+            bridge_names = [b.get('name', '') for b in all_bridges]
+
+            if bridge_name not in bridge_names:
+                bridge_interface.add(
+                    name=bridge_name,
+                    **{'auto-mac': 'yes'},
+                    comment=f'Created by {isp_brand}'
+                )
+                global_setup_results.append(f"Created bridge {bridge_name}")
+            else:
+                global_setup_results.append(f"Bridge {bridge_name} exists")
+
+            # 2. Ensure IP pool exists
+            ip_pool = api.path('/ip/pool')
+            all_pools = list(ip_pool.select('name'))
+            pool_names_list = [p.get('name', '') for p in all_pools]
+
+            if pool_name not in pool_names_list:
+                ip_pool.add(
+                    name=pool_name,
+                    ranges='172.31.0.2-172.31.255.254'
+                )
+                global_setup_results.append(f"Created pool {pool_name}")
+            else:
+                global_setup_results.append(f"Pool {pool_name} exists")
+
+            # 3. Ensure bridge has IP address
+            ip_address = api.path('/ip/address')
+            all_addresses = list(ip_address.select('address', 'interface'))
+            bridge_addresses = [a for a in all_addresses if a.get('interface') == bridge_name]
+
+            if not bridge_addresses:
+                ip_address.add(
+                    address='172.31.0.1/16',
+                    interface=bridge_name,
+                    network='172.31.0.0',
+                    comment=f'{isp_brand} bridge IP'
+                )
+                global_setup_results.append(f"Assigned IP to {bridge_name}")
+            else:
+                global_setup_results.append(f"IP already assigned to {bridge_name}")
+
+            # ===== CONFIGURE EACH INTERFACE =====
+
+            for iface_config in interfaces_config:
+                interface = iface_config['interface']
+                server_type = iface_config['type'].lower()
+                setup_steps = []
+
+                try:
+                    # Remove interface from any existing bridge first
+                    bridge_port = api.path('/interface/bridge/port')
+                    all_ports = list(bridge_port.select('.id', 'interface', 'bridge'))
+
+                    for port in all_ports:
+                        if port.get('interface') == interface:
+                            current_bridge = port.get('bridge')
+                            if current_bridge != bridge_name:
+                                bridge_port.remove(port['.id'])
+                                setup_steps.append(f"Removed {interface} from {current_bridge}")
+                            break
+
+                    # Add interface to target bridge
+                    try:
+                        bridge_port.add(
+                            interface=interface,
+                            bridge=bridge_name,
+                            comment=f'Added by {isp_brand}'
+                        )
+                        setup_steps.append(f"Added {interface} to {bridge_name}")
+                    except Exception as e:
+                        if 'already added' not in str(e):
+                            raise e
+                        setup_steps.append(f"{interface} already in {bridge_name}")
+
+                    # Configure based on type
+                    if server_type == 'pppoe':
+                        service_name = iface_config['service_name']
+                        config = iface_config.get('config', {})
+
+                        # Create PPPoE profile
+                        pppoe_profile = api.path('/ppp/profile')
+                        profile_name = f'{isp_brand}-pppoe-profile'
+
+                        all_profiles = list(pppoe_profile.select('name'))
+                        profile_names_list = [p.get('name', '') for p in all_profiles]
+
+                        if profile_name not in profile_names_list:
+                            profile_config = {
+                                'name': profile_name,
+                                'local-address': config.get('local_address', '172.31.0.1'),
+                                'remote-address': pool_name,
+                                'use-encryption': 'yes' if config.get('use_encryption', True) else 'no',
+                                'comment': f'Created by {isp_brand}'
+                            }
+                            pppoe_profile.add(**profile_config)
+                            setup_steps.append(f"Created PPPoE profile {profile_name}")
+                        else:
+                            setup_steps.append(f"PPPoE profile {profile_name} exists")
+
+                        # Configure PPPoE server
+                        pppoe_server = api.path('/interface/pppoe-server/server')
+                        existing_server = list(pppoe_server.select('.id', 'service-name').where('service-name', service_name))
+
+                        if existing_server:
+                            pppoe_server.update(
+                                **{'.id': existing_server[0]['.id']},
+                                interface=bridge_name
+                            )
+                            setup_steps.append(f"Updated PPPoE server {service_name}")
+                        else:
+                            server_config = {
+                                'service-name': service_name,
+                                'interface': bridge_name,
+                                'default-profile': profile_name,
+                                'authentication': config.get('authentication', 'pap,chap,mschap1,mschap2'),
+                                'keepalive-timeout': str(config.get('keepalive_timeout', 60)),
+                                'comment': f'Created by {isp_brand}'
+                            }
+                            pppoe_server.add(**server_config)
+
+                            if iface_config.get('auto_enable', False):
+                                pppoe_server.update(**{'.id': '*last'}, disabled='no')
+                                setup_steps.append(f"Created and enabled PPPoE server {service_name}")
+                            else:
+                                setup_steps.append(f"Created PPPoE server {service_name} (disabled)")
+
+                        interface_results.append({
+                            'interface': interface,
+                            'type': 'pppoe',
+                            'service_name': service_name,
+                            'success': True,
+                            'message': f'PPPoE server {service_name} configured successfully',
+                            'setup_steps': setup_steps
+                        })
+
+                    elif server_type == 'hotspot':
+                        hotspot_name = iface_config['hotspot_name']
+                        config = iface_config.get('config', {})
+
+                        # Create hotspot profile
+                        hotspot_profile = api.path('/ip/hotspot/profile')
+                        profile_name = f'{isp_brand}-hotspot-profile'
+
+                        all_profiles = list(hotspot_profile.select('name'))
+                        profile_names_list = [p.get('name', '') for p in all_profiles]
+
+                        if profile_name not in profile_names_list:
+                            profile_config = {
+                                'name': profile_name,
+                                'hotspot-address': '172.31.0.1',
+                                'dns-name': 'router.local',
+                                'html-directory': 'hotspot',
+                                'login-by': 'http-chap,http-pap'
+                            }
+                            hotspot_profile.add(**profile_config)
+                            setup_steps.append(f"Created hotspot profile {profile_name}")
+                        else:
+                            setup_steps.append(f"Hotspot profile {profile_name} exists")
+
+                        # Configure hotspot server
+                        hotspot = api.path('/ip/hotspot')
+                        existing_hotspot = list(hotspot.select('.id', 'name').where('name', hotspot_name))
+
+                        if existing_hotspot:
+                            hotspot.update(
+                                **{'.id': existing_hotspot[0]['.id']},
+                                interface=bridge_name
+                            )
+                            setup_steps.append(f"Updated hotspot {hotspot_name}")
+                        else:
+                            hotspot_config = {
+                                'name': hotspot_name,
+                                'interface': bridge_name,
+                                'address-pool': pool_name,
+                                'profile': profile_name,
+                                'addresses-per-mac': config.get('addresses_per_mac', 1)
+                            }
+                            hotspot.add(**hotspot_config)
+
+                            if iface_config.get('auto_enable', False):
+                                hotspot.update(**{'.id': '*last'}, disabled='no')
+                                setup_steps.append(f"Created and enabled hotspot server {hotspot_name}")
+                            else:
+                                setup_steps.append(f"Created hotspot server {hotspot_name} (disabled)")
+
+                        interface_results.append({
+                            'interface': interface,
+                            'type': 'hotspot',
+                            'hotspot_name': hotspot_name,
+                            'success': True,
+                            'message': f'Hotspot server {hotspot_name} configured successfully',
+                            'setup_steps': setup_steps
+                        })
+
+                    else:
+                        interface_results.append({
+                            'interface': interface,
+                            'type': server_type,
+                            'success': False,
+                            'message': f'Unknown server type: {server_type}',
+                            'error': f'Supported types are: pppoe, hotspot'
+                        })
+
+                except Exception as e:
+                    logger.error(f"Failed to configure {interface} as {server_type}", error=str(e))
+                    interface_results.append({
+                        'interface': interface,
+                        'type': server_type,
+                        'success': False,
+                        'message': f'Failed to configure {server_type} server',
+                        'error': str(e)
+                    })
+
+            api.close()
+
+            # Calculate summary
+            successful = sum(1 for r in interface_results if r['success'])
+            failed = len(interface_results) - successful
+
+            return {
+                'success': True,
+                'bridge_name': bridge_name,
+                'pool_name': pool_name,
+                'global_setup': global_setup_results,
+                'results': interface_results,
+                'summary': {
+                    'total': len(interface_results),
+                    'successful': successful,
+                    'failed': failed
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to configure multiple servers", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def close_connections(self):
         """Close all MikroTik connections"""
         with self.connection_lock:

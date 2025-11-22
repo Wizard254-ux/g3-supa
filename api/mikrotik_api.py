@@ -1118,10 +1118,10 @@ def enable_anti_sharing():
         data = g.validated_data
         interface = data['interface']
         device_name = data.get('device_name', 'core_router')
-        
+
         mikrotik_service = MikroTikService(current_app)
         result = mikrotik_service.enable_anti_sharing_protection(interface, device_name)
-        
+
         if result['success']:
             return jsonify({
                 'success': True,
@@ -1133,12 +1133,99 @@ def enable_anti_sharing():
                 'success': False,
                 'error': result.get('error')
             }), 500
-            
+
     except Exception as e:
         logger.error("Error enabling anti-sharing protection", error=str(e))
         return jsonify({
             'success': False,
             'error': 'Internal server error'
+        }), 500
+
+
+@mikrotik_bp.route('/servers/configure-multiple', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['username', 'password', 'host', 'interfaces']
+)
+def configure_multiple_servers():
+    """
+    Configure multiple interfaces as PPPoE or Hotspot servers in a single request.
+    Flexible endpoint that can handle mixed configurations on different ports.
+    """
+    try:
+        data = g.validated_data
+        username = data['username']
+        password = data['password']
+        host = data['host']
+        port = data.get('port', 8728)
+        interfaces_config = data['interfaces']
+
+        # Validate interfaces array
+        if not isinstance(interfaces_config, list) or len(interfaces_config) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'interfaces must be a non-empty array'
+            }), 400
+
+        # Validate each interface configuration
+        for idx, iface in enumerate(interfaces_config):
+            if 'interface' not in iface:
+                return jsonify({
+                    'success': False,
+                    'error': f'interfaces[{idx}]: missing required field "interface"'
+                }), 400
+
+            if 'type' not in iface:
+                return jsonify({
+                    'success': False,
+                    'error': f'interfaces[{idx}]: missing required field "type"'
+                }), 400
+
+            server_type = iface['type'].lower()
+
+            if server_type == 'pppoe' and 'service_name' not in iface:
+                return jsonify({
+                    'success': False,
+                    'error': f'interfaces[{idx}]: PPPoE configuration requires "service_name"'
+                }), 400
+
+            if server_type == 'hotspot' and 'hotspot_name' not in iface:
+                return jsonify({
+                    'success': False,
+                    'error': f'interfaces[{idx}]: Hotspot configuration requires "hotspot_name"'
+                }), 400
+
+        logger.info(f"Configuring {len(interfaces_config)} interfaces on {host}")
+
+        mikrotik_service = MikroTikService(current_app)
+        result = mikrotik_service.configure_multiple_servers_dynamic(
+            username, password, host, port, interfaces_config
+        )
+
+        if result['success']:
+            logger.info(f"Successfully configured {result['summary']['successful']} interfaces")
+            return jsonify({
+                'success': True,
+                'message': f"Configured {result['summary']['successful']}/{result['summary']['total']} interfaces successfully",
+                'bridge_name': result['bridge_name'],
+                'pool_name': result['pool_name'],
+                'global_setup': result['global_setup'],
+                'results': result['results'],
+                'summary': result['summary']
+            }), 200
+        else:
+            logger.error(f"Failed to configure multiple servers: {result.get('error')}")
+            return jsonify({
+                'success': False,
+                'error': result.get('error')
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Exception in servers/configure-multiple: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
         }), 500
 
 
