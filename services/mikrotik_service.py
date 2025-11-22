@@ -1321,56 +1321,77 @@ class MikroTikService:
                                           interfaces_config: List[Dict]) -> Dict:
         """Configure multiple interfaces as PPPoE or Hotspot servers in a single connection"""
         try:
+            logger.info("=== configure_multiple_servers_dynamic called ===")
+            logger.info(f"Host: {host}, Port: {port}, User: {username}")
+            logger.info(f"Interfaces config: {interfaces_config}")
+
             import librouteros
 
+            logger.info(f"Attempting connection to {host}:{port}...")
             api = librouteros.connect(
                 host=host, username=username, password=password, port=port, timeout=10
             )
+            logger.info("Connection established successfully")
 
             isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
             bridge_name = self.app.config.get('ISP_BRIDGE_NAME', f'{isp_brand}_bridge')
             pool_name = self.app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
+
+            logger.info(f"ISP Brand: {isp_brand}, Bridge: {bridge_name}, Pool: {pool_name}")
 
             global_setup_results = []
             interface_results = []
 
             # ===== SHARED PREREQUISITES (Run Once) =====
 
+            logger.info("Step 1: Checking/creating bridge...")
             # 1. Ensure bridge exists
             bridge_interface = api.path('/interface/bridge')
             all_bridges = list(bridge_interface.select('name'))
             bridge_names = [b.get('name', '') for b in all_bridges]
+            logger.info(f"Existing bridges: {bridge_names}")
 
             if bridge_name not in bridge_names:
+                logger.info(f"Creating bridge {bridge_name}...")
                 bridge_interface.add(
                     name=bridge_name,
                     **{'auto-mac': 'yes'},
                     comment=f'Created by {isp_brand}'
                 )
                 global_setup_results.append(f"Created bridge {bridge_name}")
+                logger.info(f"Bridge {bridge_name} created")
             else:
                 global_setup_results.append(f"Bridge {bridge_name} exists")
+                logger.info(f"Bridge {bridge_name} already exists")
 
+            logger.info("Step 2: Checking/creating IP pool...")
             # 2. Ensure IP pool exists
             ip_pool = api.path('/ip/pool')
             all_pools = list(ip_pool.select('name'))
             pool_names_list = [p.get('name', '') for p in all_pools]
+            logger.info(f"Existing pools: {pool_names_list}")
 
             if pool_name not in pool_names_list:
+                logger.info(f"Creating pool {pool_name}...")
                 ip_pool.add(
                     name=pool_name,
                     ranges='172.31.0.2-172.31.255.254'
                 )
                 global_setup_results.append(f"Created pool {pool_name}")
+                logger.info(f"Pool {pool_name} created")
             else:
                 global_setup_results.append(f"Pool {pool_name} exists")
+                logger.info(f"Pool {pool_name} already exists")
 
+            logger.info("Step 3: Checking/assigning bridge IP address...")
             # 3. Ensure bridge has IP address
             ip_address = api.path('/ip/address')
             all_addresses = list(ip_address.select('address', 'interface'))
             bridge_addresses = [a for a in all_addresses if a.get('interface') == bridge_name]
+            logger.info(f"Bridge {bridge_name} addresses: {bridge_addresses}")
 
             if not bridge_addresses:
+                logger.info(f"Assigning IP 172.31.0.1/16 to {bridge_name}...")
                 ip_address.add(
                     address='172.31.0.1/16',
                     interface=bridge_name,
@@ -1378,17 +1399,28 @@ class MikroTikService:
                     comment=f'{isp_brand} bridge IP'
                 )
                 global_setup_results.append(f"Assigned IP to {bridge_name}")
+                logger.info("IP assigned")
             else:
                 global_setup_results.append(f"IP already assigned to {bridge_name}")
+                logger.info("IP already assigned")
+
+            logger.info(f"Global setup completed: {global_setup_results}")
 
             # ===== CONFIGURE EACH INTERFACE =====
 
-            for iface_config in interfaces_config:
+            logger.info(f"Starting to configure {len(interfaces_config)} interfaces...")
+            for idx, iface_config in enumerate(interfaces_config):
+                logger.info(f"=== Processing interface {idx + 1}/{len(interfaces_config)} ===")
+                logger.info(f"Interface config: {iface_config}")
+
                 interface = iface_config['interface']
                 server_type = iface_config['type'].lower()
                 setup_steps = []
 
+                logger.info(f"Interface: {interface}, Type: {server_type}")
+
                 try:
+                    logger.info(f"Checking bridge port assignment for {interface}...")
                     # Remove interface from any existing bridge first
                     bridge_port = api.path('/interface/bridge/port')
                     all_ports = list(bridge_port.select('.id', 'interface', 'bridge'))
@@ -1396,12 +1428,16 @@ class MikroTikService:
                     for port in all_ports:
                         if port.get('interface') == interface:
                             current_bridge = port.get('bridge')
+                            logger.info(f"{interface} is currently in bridge: {current_bridge}")
                             if current_bridge != bridge_name:
+                                logger.info(f"Removing {interface} from {current_bridge}...")
                                 bridge_port.remove(port['.id'])
                                 setup_steps.append(f"Removed {interface} from {current_bridge}")
+                                logger.info("Removed")
                             break
 
                     # Add interface to target bridge
+                    logger.info(f"Adding {interface} to {bridge_name}...")
                     try:
                         bridge_port.add(
                             interface=interface,
@@ -1409,24 +1445,33 @@ class MikroTikService:
                             comment=f'Added by {isp_brand}'
                         )
                         setup_steps.append(f"Added {interface} to {bridge_name}")
+                        logger.info(f"{interface} added to {bridge_name}")
                     except Exception as e:
                         if 'already added' not in str(e):
+                            logger.error(f"Error adding {interface} to bridge: {str(e)}")
                             raise e
                         setup_steps.append(f"{interface} already in {bridge_name}")
+                        logger.info(f"{interface} already in {bridge_name}")
 
                     # Configure based on type
+                    logger.info(f"Configuring {server_type} server for {interface}...")
                     if server_type == 'pppoe':
+                        logger.info("PPPoE configuration started")
                         service_name = iface_config['service_name']
                         config = iface_config.get('config', {})
+                        logger.info(f"Service name: {service_name}, Config: {config}")
 
                         # Create PPPoE profile
+                        logger.info("Checking/creating PPPoE profile...")
                         pppoe_profile = api.path('/ppp/profile')
                         profile_name = f'{isp_brand}-pppoe-profile'
 
                         all_profiles = list(pppoe_profile.select('name'))
                         profile_names_list = [p.get('name', '') for p in all_profiles]
+                        logger.info(f"Existing PPPoE profiles: {profile_names_list}")
 
                         if profile_name not in profile_names_list:
+                            logger.info(f"Creating PPPoE profile {profile_name}...")
                             profile_config = {
                                 'name': profile_name,
                                 'local-address': config.get('local_address', '172.31.0.1'),
@@ -1440,16 +1485,38 @@ class MikroTikService:
                             setup_steps.append(f"PPPoE profile {profile_name} exists")
 
                         # Configure PPPoE server
+                        logger.info("Configuring PPPoE server...")
                         pppoe_server = api.path('/interface/pppoe-server/server')
                         existing_server = list(pppoe_server.select('.id', 'service-name').where('service-name', service_name))
 
                         if existing_server:
-                            pppoe_server.update(
-                                **{'.id': existing_server[0]['.id']},
-                                interface=bridge_name
-                            )
-                            setup_steps.append(f"Updated PPPoE server {service_name}")
+                            logger.info(f"PPPoE server {service_name} exists, updating...")
+                            server_id = existing_server[0]['.id']
+
+                            # Update interface and disabled status
+                            update_config = {
+                                '.id': server_id,
+                                'interface': bridge_name
+                            }
+
+                            # Handle auto_enable for existing servers
+                            if iface_config.get('auto_enable', False):
+                                update_config['disabled'] = 'no'
+                                logger.info("Setting server to enabled")
+                            else:
+                                update_config['disabled'] = 'yes'
+                                logger.info("Setting server to disabled")
+
+                            pppoe_server.update(**update_config)
+
+                            if iface_config.get('auto_enable', False):
+                                setup_steps.append(f"Updated and enabled PPPoE server {service_name}")
+                                logger.info("PPPoE server updated and enabled")
+                            else:
+                                setup_steps.append(f"Updated PPPoE server {service_name} (disabled)")
+                                logger.info("PPPoE server updated (disabled)")
                         else:
+                            logger.info(f"Creating new PPPoE server {service_name}...")
                             server_config = {
                                 'service-name': service_name,
                                 'interface': bridge_name,
@@ -1463,8 +1530,10 @@ class MikroTikService:
                             if iface_config.get('auto_enable', False):
                                 pppoe_server.update(**{'.id': '*last'}, disabled='no')
                                 setup_steps.append(f"Created and enabled PPPoE server {service_name}")
+                                logger.info("PPPoE server created and enabled")
                             else:
                                 setup_steps.append(f"Created PPPoE server {service_name} (disabled)")
+                                logger.info("PPPoE server created (disabled)")
 
                         interface_results.append({
                             'interface': interface,
@@ -1500,16 +1569,38 @@ class MikroTikService:
                             setup_steps.append(f"Hotspot profile {profile_name} exists")
 
                         # Configure hotspot server
+                        logger.info("Configuring hotspot server...")
                         hotspot = api.path('/ip/hotspot')
                         existing_hotspot = list(hotspot.select('.id', 'name').where('name', hotspot_name))
 
                         if existing_hotspot:
-                            hotspot.update(
-                                **{'.id': existing_hotspot[0]['.id']},
-                                interface=bridge_name
-                            )
-                            setup_steps.append(f"Updated hotspot {hotspot_name}")
+                            logger.info(f"Hotspot {hotspot_name} exists, updating...")
+                            hotspot_id = existing_hotspot[0]['.id']
+
+                            # Update interface and disabled status
+                            update_config = {
+                                '.id': hotspot_id,
+                                'interface': bridge_name
+                            }
+
+                            # Handle auto_enable for existing hotspots
+                            if iface_config.get('auto_enable', False):
+                                update_config['disabled'] = 'no'
+                                logger.info("Setting hotspot to enabled")
+                            else:
+                                update_config['disabled'] = 'yes'
+                                logger.info("Setting hotspot to disabled")
+
+                            hotspot.update(**update_config)
+
+                            if iface_config.get('auto_enable', False):
+                                setup_steps.append(f"Updated and enabled hotspot {hotspot_name}")
+                                logger.info("Hotspot updated and enabled")
+                            else:
+                                setup_steps.append(f"Updated hotspot {hotspot_name} (disabled)")
+                                logger.info("Hotspot updated (disabled)")
                         else:
+                            logger.info(f"Creating new hotspot {hotspot_name}...")
                             hotspot_config = {
                                 'name': hotspot_name,
                                 'interface': bridge_name,
@@ -1522,8 +1613,10 @@ class MikroTikService:
                             if iface_config.get('auto_enable', False):
                                 hotspot.update(**{'.id': '*last'}, disabled='no')
                                 setup_steps.append(f"Created and enabled hotspot server {hotspot_name}")
+                                logger.info("Hotspot created and enabled")
                             else:
                                 setup_steps.append(f"Created hotspot server {hotspot_name} (disabled)")
+                                logger.info("Hotspot created (disabled)")
 
                         interface_results.append({
                             'interface': interface,
@@ -1545,6 +1638,7 @@ class MikroTikService:
 
                 except Exception as e:
                     logger.error(f"Failed to configure {interface} as {server_type}", error=str(e))
+                    logger.error(f"Exception type: {type(e).__name__}, Details: {str(e)}")
                     interface_results.append({
                         'interface': interface,
                         'type': server_type,
@@ -1553,13 +1647,17 @@ class MikroTikService:
                         'error': str(e)
                     })
 
+            logger.info("All interfaces processed, closing connection...")
             api.close()
+            logger.info("Connection closed")
 
             # Calculate summary
             successful = sum(1 for r in interface_results if r['success'])
             failed = len(interface_results) - successful
 
-            return {
+            logger.info(f"Summary: {successful} successful, {failed} failed out of {len(interface_results)} total")
+
+            result = {
                 'success': True,
                 'bridge_name': bridge_name,
                 'pool_name': pool_name,
@@ -1572,8 +1670,13 @@ class MikroTikService:
                 }
             }
 
+            logger.info(f"Returning result: {result}")
+            return result
+
         except Exception as e:
-            logger.error(f"Failed to configure multiple servers", error=str(e))
+            logger.error(f"Failed to configure multiple servers - EXCEPTION IN MAIN TRY BLOCK", error=str(e))
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception details: {str(e)}", exc_info=True)
             return {
                 'success': False,
                 'error': str(e)

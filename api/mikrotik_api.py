@@ -1154,6 +1154,8 @@ def configure_multiple_servers():
     Flexible endpoint that can handle mixed configurations on different ports.
     """
     try:
+        logger.info("=== Configure Multiple Servers Endpoint Called ===")
+
         data = g.validated_data
         username = data['username']
         password = data['password']
@@ -1161,8 +1163,13 @@ def configure_multiple_servers():
         port = data.get('port', 8728)
         interfaces_config = data['interfaces']
 
+        logger.info(f"Request parameters - Host: {host}, Port: {port}, User: {username}")
+        logger.info(f"Number of interfaces to configure: {len(interfaces_config) if isinstance(interfaces_config, list) else 'NOT A LIST'}")
+        logger.info(f"Interfaces config received: {interfaces_config}")
+
         # Validate interfaces array
         if not isinstance(interfaces_config, list) or len(interfaces_config) == 0:
+            logger.error(f"Validation failed: interfaces is not a valid array. Type: {type(interfaces_config)}, Value: {interfaces_config}")
             return jsonify({
                 'success': False,
                 'error': 'interfaces must be a non-empty array'
@@ -1170,41 +1177,56 @@ def configure_multiple_servers():
 
         # Validate each interface configuration
         for idx, iface in enumerate(interfaces_config):
+            logger.info(f"Validating interface [{idx}]: {iface}")
+
             if 'interface' not in iface:
+                logger.error(f"Validation failed at index {idx}: missing 'interface' field")
                 return jsonify({
                     'success': False,
                     'error': f'interfaces[{idx}]: missing required field "interface"'
                 }), 400
 
             if 'type' not in iface:
+                logger.error(f"Validation failed at index {idx}: missing 'type' field")
                 return jsonify({
                     'success': False,
                     'error': f'interfaces[{idx}]: missing required field "type"'
                 }), 400
 
             server_type = iface['type'].lower()
+            logger.info(f"Interface [{idx}] - Name: {iface['interface']}, Type: {server_type}")
 
             if server_type == 'pppoe' and 'service_name' not in iface:
+                logger.error(f"Validation failed at index {idx}: PPPoE missing 'service_name'")
                 return jsonify({
                     'success': False,
                     'error': f'interfaces[{idx}]: PPPoE configuration requires "service_name"'
                 }), 400
 
             if server_type == 'hotspot' and 'hotspot_name' not in iface:
+                logger.error(f"Validation failed at index {idx}: Hotspot missing 'hotspot_name'")
                 return jsonify({
                     'success': False,
                     'error': f'interfaces[{idx}]: Hotspot configuration requires "hotspot_name"'
                 }), 400
 
-        logger.info(f"Configuring {len(interfaces_config)} interfaces on {host}")
+        logger.info(f"All validations passed. Configuring {len(interfaces_config)} interfaces on {host}:{port}")
 
         mikrotik_service = MikroTikService(current_app)
+        logger.info("MikroTikService instance created, calling configure_multiple_servers_dynamic...")
+
         result = mikrotik_service.configure_multiple_servers_dynamic(
             username, password, host, port, interfaces_config
         )
 
+        logger.info(f"Service method returned. Success: {result.get('success')}")
+        logger.info(f"Full result: {result}")
+
         if result['success']:
-            logger.info(f"Successfully configured {result['summary']['successful']} interfaces")
+            logger.info(f"Successfully configured {result['summary']['successful']}/{result['summary']['total']} interfaces")
+            logger.info(f"Bridge: {result.get('bridge_name')}, Pool: {result.get('pool_name')}")
+            logger.info(f"Individual results: {result.get('results')}")
+
             return jsonify({
                 'success': True,
                 'message': f"Configured {result['summary']['successful']}/{result['summary']['total']} interfaces successfully",
@@ -1215,7 +1237,7 @@ def configure_multiple_servers():
                 'summary': result['summary']
             }), 200
         else:
-            logger.error(f"Failed to configure multiple servers: {result.get('error')}")
+            logger.error(f"Service method failed with error: {result.get('error')}")
             return jsonify({
                 'success': False,
                 'error': result.get('error')
@@ -1223,6 +1245,8 @@ def configure_multiple_servers():
 
     except Exception as e:
         logger.error(f"Exception in servers/configure-multiple: {str(e)}", exc_info=True)
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception args: {e.args}")
         return jsonify({
             'success': False,
             'error': f'Internal server error: {str(e)}'
