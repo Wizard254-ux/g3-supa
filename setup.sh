@@ -1814,27 +1814,27 @@ CREATE TABLE IF NOT EXISTS packages (
     UNIQUE KEY unique_package_per_owner (username, package_name),
     INDEX idx_username (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Bandwidth packages per ISP owner';
-
--- Enhance radcheck table for multi-tenancy and package association
-ALTER TABLE radcheck
-    ADD COLUMN IF NOT EXISTS username_owner VARCHAR(64) COMMENT 'ISP owner username',
-    ADD COLUMN IF NOT EXISTS package_id INT COMMENT 'FK to packages.id',
-    ADD COLUMN IF NOT EXISTS status ENUM('active', 'suspended', 'expired') DEFAULT 'active',
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ADD INDEX IF NOT EXISTS idx_username_owner (username_owner),
-    ADD INDEX IF NOT EXISTS idx_package_id (package_id),
-    ADD INDEX IF NOT EXISTS idx_status (status);
-
--- Add username_owner to radacct for session tracking per ISP owner
-ALTER TABLE radacct
-    ADD COLUMN IF NOT EXISTS username_owner VARCHAR(64) COMMENT 'ISP owner username',
-    ADD INDEX IF NOT EXISTS idx_username_owner (username_owner);
-
--- Add username_owner to radpostauth for auth logging per ISP owner
-ALTER TABLE radpostauth
-    ADD COLUMN IF NOT EXISTS username_owner VARCHAR(64) COMMENT 'ISP owner username',
-    ADD INDEX IF NOT EXISTS idx_username_owner (username_owner);
 EOSQL
+
+    # Add columns to radcheck (with error handling for existing columns)
+    print_status "Enhancing radcheck table..."
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN username_owner VARCHAR(64) COMMENT 'ISP owner username';" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN package_id INT COMMENT 'FK to packages.id';" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN status ENUM('active', 'suspended', 'expired') DEFAULT 'active';" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD INDEX idx_username_owner (username_owner);" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD INDEX idx_package_id (package_id);" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD INDEX idx_status (status);" 2>/dev/null || true
+
+    # Add columns to radacct
+    print_status "Enhancing radacct table..."
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radacct ADD COLUMN username_owner VARCHAR(64) COMMENT 'ISP owner username';" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radacct ADD INDEX idx_username_owner (username_owner);" 2>/dev/null || true
+
+    # Add columns to radpostauth
+    print_status "Enhancing radpostauth table..."
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radpostauth ADD COLUMN username_owner VARCHAR(64) COMMENT 'ISP owner username';" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radpostauth ADD INDEX idx_username_owner (username_owner);" 2>/dev/null || true
 
     print_success "Multi-tenant RADIUS tables created successfully"
 
