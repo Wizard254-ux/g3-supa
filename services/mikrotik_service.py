@@ -1653,23 +1653,33 @@ class MikroTikService:
 
                         # Check if a hotspot already exists on this bridge
                         logger.info("Checking for existing hotspots on bridge...")
-                        try:
-                            hotspot_check = api.path('/ip/hotspot')
-                            existing_hotspots_on_bridge = list(hotspot_check.select('name', 'interface').where('interface', bridge_name))
-                            logger.info(f"Existing hotspots on {bridge_name}: {existing_hotspots_on_bridge}")
+                        hotspot_check = api.path('/ip/hotspot')
+                        existing_hotspots_on_bridge = list(hotspot_check.select('.id', 'name', 'interface').where('interface', bridge_name))
+                        logger.info(f"Existing hotspots on {bridge_name}: {existing_hotspots_on_bridge}")
 
-                            if existing_hotspots_on_bridge:
-                                existing_names = [h.get('name') for h in existing_hotspots_on_bridge]
-                                if hotspot_name not in existing_names:
-                                    error_msg = f"Bridge {bridge_name} already has hotspot(s): {existing_names}. MikroTik only allows one hotspot per bridge. Please use the existing hotspot or remove it first."
-                                    logger.error(error_msg)
-                                    raise Exception(error_msg)
-                                else:
-                                    logger.info(f"Hotspot {hotspot_name} already exists on bridge, will update it")
-                        except Exception as check_error:
-                            if "only allows one hotspot" in str(check_error):
-                                raise
-                            logger.warning(f"Could not check existing hotspots: {str(check_error)}")
+                        if existing_hotspots_on_bridge:
+                            existing_names = [h.get('name') for h in existing_hotspots_on_bridge]
+
+                            if hotspot_name not in existing_names:
+                                # Different hotspot exists - remove it first
+                                logger.warning(f"Bridge {bridge_name} has different hotspot(s): {existing_names}")
+                                logger.info(f"Auto-removing existing hotspot(s) to make room for {hotspot_name}...")
+
+                                for existing_hs in existing_hotspots_on_bridge:
+                                    hs_id = existing_hs.get('.id')
+                                    hs_name = existing_hs.get('name')
+                                    logger.info(f"Removing hotspot {hs_name} (ID: {hs_id})...")
+                                    try:
+                                        hotspot_check.remove(hs_id)
+                                        setup_steps.append(f"Removed existing hotspot '{hs_name}' from bridge")
+                                        logger.info(f"Successfully removed hotspot {hs_name}")
+                                    except Exception as remove_error:
+                                        logger.error(f"Failed to remove hotspot {hs_name}: {str(remove_error)}")
+                                        raise Exception(f"Could not remove existing hotspot {hs_name}: {str(remove_error)}")
+                            else:
+                                logger.info(f"Hotspot {hotspot_name} already exists on bridge, will update it")
+                        else:
+                            logger.info(f"No hotspots found on {bridge_name}, will create new one")
 
                         # Create hotspot profile
                         logger.info("Checking/creating hotspot profile...")
