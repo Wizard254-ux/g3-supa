@@ -1284,11 +1284,13 @@ class MikroTikService:
             logger.info("Step 6: Checking/creating hotspot profile...")
             hotspot_profile = api.path('/ip/hotspot/profile')
             profile_name = f'{isp_brand}-hotspot-profile'
+            logger.info(f"Profile name to use: '{profile_name}'")
 
             logger.info("Getting existing hotspot profiles...")
             all_profiles = list(hotspot_profile.select('name'))
             profile_names = [p.get('name', '') for p in all_profiles]
             logger.info(f"Existing hotspot profiles: {profile_names}")
+            logger.info(f"Checking if '{profile_name}' in {profile_names}")
 
             if profile_name not in profile_names:
                 logger.info(f"Creating hotspot profile {profile_name}...")
@@ -1317,12 +1319,30 @@ class MikroTikService:
 
             if existing_hotspot:
                 logger.info(f"Hotspot {hotspot_name} exists, updating...")
-                hotspot.update(
-                    **{'.id': existing_hotspot[0]['.id']},
-                    interface=bridge_name
-                )
-                setup_results.append(f"Updated hotspot {hotspot_name} to use bridge {bridge_name}")
-                logger.info("Hotspot updated")
+                hotspot_id = existing_hotspot[0]['.id']
+
+                # Update interface and disabled status
+                update_config = {
+                    '.id': hotspot_id,
+                    'interface': bridge_name
+                }
+
+                # Handle auto_enable for existing hotspots
+                if config.get('auto_enable', False):
+                    update_config['disabled'] = 'no'
+                    logger.info("Setting hotspot to enabled")
+                else:
+                    update_config['disabled'] = 'yes'
+                    logger.info("Setting hotspot to disabled")
+
+                hotspot.update(**update_config)
+
+                if config.get('auto_enable', False):
+                    setup_results.append(f"Updated and enabled hotspot {hotspot_name} on bridge {bridge_name}")
+                    logger.info("Hotspot updated and enabled")
+                else:
+                    setup_results.append(f"Updated hotspot {hotspot_name} on bridge {bridge_name} (disabled)")
+                    logger.info("Hotspot updated (disabled)")
             else:
                 logger.info(f"Creating new hotspot {hotspot_name}...")
                 hotspot_config = {
