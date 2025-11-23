@@ -1749,14 +1749,21 @@ class MikroTikService:
                                     'profile': profile_name,
                                     'addresses-per-mac': config.get('addresses_per_mac', 1)
                                 }
+
+                                # Set disabled status during creation (not after)
+                                if iface_config.get('auto_enable', False):
+                                    hotspot_config['disabled'] = 'no'
+                                    logger.info("Creating hotspot in ENABLED state")
+                                else:
+                                    hotspot_config['disabled'] = 'yes'
+                                    logger.info("Creating hotspot in DISABLED state")
+
                                 logger.info(f"Hotspot config: {hotspot_config}")
                                 logger.info("Calling hotspot.add()...")
                                 hotspot.add(**hotspot_config)
                                 logger.info("Hotspot.add() completed")
 
                                 if iface_config.get('auto_enable', False):
-                                    logger.info("Enabling hotspot...")
-                                    hotspot.update(**{'.id': '*last'}, disabled='no')
                                     setup_steps.append(f"Created and enabled hotspot server {hotspot_name}")
                                     logger.info("Hotspot created and enabled")
                                 else:
