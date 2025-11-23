@@ -1,0 +1,143 @@
+{
+  "info": {
+    "name": "RADIUS Management API",
+    "description": "Multi-tenant RADIUS package and customer management",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5001"
+    },
+    {
+      "key": "api_key",
+      "value": "your-api-key-here"
+    },
+    {
+      "key": "username",
+      "value": "abutis"
+    }
+  ],
+  "item": [
+    {
+      "name": "Packages",
+      "item": [
+        {
+          "name": "Create Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "X-API-Key", "value": "{{api_key}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"package_name\": \"bronze\",\n  \"download_speed\": \"5M\",\n  \"upload_speed\": \"5M\",\n  \"price\": 500,\n  \"description\": \"Bronze - 5Mbps\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/radius/packages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "radius", "packages"]
+            }
+          }
+        },
+        {
+          "name": "List Packages",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "X-API-Key", "value": "{{api_key}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/radius/packages/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "radius", "packages", "list"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Create Customer (Add to Package)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "X-API-Key", "value": "{{api_key}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"customer_username\": \"john\",\n  \"password\": \"secret123\",\n  \"package_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/radius/customers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "radius", "customers"]
+            }
+          }
+        },
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "X-API-Key", "value": "{{api_key}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/radius/customers/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "radius", "customers", "list"]
+            }
+          }
+        },
+        {
+          "name": "Change Customer Package",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "X-API-Key", "value": "{{api_key}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"package_id\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/radius/customers/john@{{username}}/package",
+              "host": ["{{base_url}}"],
+              "path": ["api", "radius", "customers", "john@{{username}}", "package"]
+            }
+          }
+        },
+        {
+          "name": "Delete Customer (Remove from Package)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {"key": "X-API-Key", "value": "{{api_key}}"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/radius/customers/john@{{username}}?username={{username}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "radius", "customers", "john@{{username}}"],
+              "query": [{"key": "username", "value": "{{username}}"}]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

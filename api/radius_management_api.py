@@ -282,18 +282,25 @@ def delete_package(package_id):
 @api_endpoint(
     require_auth=True,
     require_json=True,
-    required_fields=['username', 'customer_username', 'password', 'package_id']
+    required_fields=['username', 'customer_username', 'password']
 )
 def create_customer():
     """
-    Create a new RADIUS customer
+    Create a new RADIUS customer (with or without package)
 
-    Request:
+    Request (with package - create and assign):
     {
         "username": "abutis",
         "customer_username": "john",
         "password": "secret123",
         "package_id": 1
+    }
+
+    Request (without package - just create account):
+    {
+        "username": "abutis",
+        "customer_username": "john",
+        "password": "secret123"
     }
 
     Response:
@@ -314,7 +321,11 @@ def create_customer():
         username = data['username']
         customer_username = data['customer_username']
         password = data['password']
-        package_id = int(data['package_id'])
+        package_id = data.get('package_id')  # Optional
+
+        # Convert to int if provided
+        if package_id is not None:
+            package_id = int(package_id)
 
         logger.info("Create customer request", username=username,
                    customer_username=customer_username)

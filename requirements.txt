@@ -14,6 +14,7 @@ flask-vite
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL
+pymysql>=1.1.0          # MySQL for RADIUS
 redis>=4.5.0            # Redis for caching
 alembic>=1.11.0         # Database migrations
 

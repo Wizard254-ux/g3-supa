@@ -1754,72 +1754,164 @@ fi
 }
 
 setup_freeradius() {
-    print_header "Setting up FreeRADIUS"
+    print_header "Setting up FreeRADIUS with Multi-Tenant Support"
 
-    # Enable and start FreeRADIUS
-    systemctl stop freeradius
+    # Configuration
+    RADIUS_DB_NAME="radius"
+    RADIUS_DB_USER="radius"
+    RADIUS_DB_PASS="RadiusSecurePass2024!"
+    RADIUS_SECRET="testing123"
 
-    # Create Python module for authentication
-    mkdir -p /etc/freeradius/3.0/mods-config/python3
+    print_status "Installing FreeRADIUS packages..."
+    # Packages are already installed in setup_packages
 
-    cat > /etc/freeradius/3.0/mods-config/python3/isp_auth.py << 'EOF'
-import requests
-import radiusd
+    print_status "Creating RADIUS database and user..."
+    mysql -e "CREATE DATABASE IF NOT EXISTS ${RADIUS_DB_NAME};" || true
+    mysql -e "CREATE USER IF NOT EXISTS '${RADIUS_DB_USER}'@'localhost' IDENTIFIED BY '${RADIUS_DB_PASS}';" || true
+    mysql -e "GRANT ALL PRIVILEGES ON ${RADIUS_DB_NAME}.* TO '${RADIUS_DB_USER}'@'localhost';" || true
+    mysql -e "FLUSH PRIVILEGES;"
 
-def authenticate(p):
-    """FreeRADIUS authentication function"""
-    username = None
-    password = None
+    print_success "Database created: ${RADIUS_DB_NAME}"
 
-    # Extract username and password
-    for attr in p:
-        if attr[0] == 'User-Name':
-            username = attr[1]
-        elif attr[0] == 'User-Password':
-            password = attr[1]
+    print_status "Importing RADIUS schema..."
+    # Find the schema file (location may vary by Ubuntu version)
+    SCHEMA_FILE=""
+    if [ -f "/etc/freeradius/3.0/mods-config/sql/main/mysql/schema.sql" ]; then
+        SCHEMA_FILE="/etc/freeradius/3.0/mods-config/sql/main/mysql/schema.sql"
+    elif [ -f "/etc/freeradius/3.2/mods-config/sql/main/mysql/schema.sql" ]; then
+        SCHEMA_FILE="/etc/freeradius/3.2/mods-config/sql/main/mysql/schema.sql"
+    fi
 
-    if not username or not password:
-        return radiusd.RLM_MODULE_REJECT
+    if [ -z "$SCHEMA_FILE" ]; then
+        print_error "Could not find RADIUS schema file"
+        return 1
+    fi
 
-    try:
-        # Call Flask middleware for authentication
-        response = requests.post(
-            'http://127.0.0.1:5000/api/auth/radius/authenticate',
-            json={
-                'username': username,
-                'password': password,
-                'nas_ip_address': p.get('NAS-IP-Address'),
-                'nas_port': p.get('NAS-Port')
-            },
-            timeout=10
-        )
+    mysql ${RADIUS_DB_NAME} < ${SCHEMA_FILE}
+    print_success "Schema imported successfully"
 
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('access') == 'accept':
-                return radiusd.RLM_MODULE_OK
+    print_status "Creating multi-tenant tables for packages and customers..."
+    mysql ${RADIUS_DB_NAME} << 'EOSQL'
+-- Packages table (each ISP owner identified by username has their own packages)
+CREATE TABLE IF NOT EXISTS packages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(64) NOT NULL COMMENT 'ISP owner username from external system',
+    package_name VARCHAR(64) NOT NULL,
+    download_speed VARCHAR(32) NOT NULL,
+    upload_speed VARCHAR(32) NOT NULL,
+    description TEXT,
+    price DECIMAL(10,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_package_per_owner (username, package_name),
+    INDEX idx_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Bandwidth packages per ISP owner';
 
-        return radiusd.RLM_MODULE_REJECT
+-- Enhance radcheck table for multi-tenancy and package association
+ALTER TABLE radcheck
+    ADD COLUMN IF NOT EXISTS username_owner VARCHAR(64) COMMENT 'ISP owner username',
+    ADD COLUMN IF NOT EXISTS package_id INT COMMENT 'FK to packages.id',
+    ADD COLUMN IF NOT EXISTS status ENUM('active', 'suspended', 'expired') DEFAULT 'active',
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ADD INDEX IF NOT EXISTS idx_username_owner (username_owner),
+    ADD INDEX IF NOT EXISTS idx_package_id (package_id),
+    ADD INDEX IF NOT EXISTS idx_status (status);
 
-    except Exception:
-        return radiusd.RLM_MODULE_FAIL
+-- Add username_owner to radacct for session tracking per ISP owner
+ALTER TABLE radacct
+    ADD COLUMN IF NOT EXISTS username_owner VARCHAR(64) COMMENT 'ISP owner username',
+    ADD INDEX IF NOT EXISTS idx_username_owner (username_owner);
 
-def accounting(p):
-    """FreeRADIUS accounting function"""
-    try:
-        # Call Flask middleware for accounting
-        requests.post(
-            'http://127.0.0.1:5000/api/auth/radius/accounting',
-            json=dict(p),
-            timeout=5
-        )
-        return radiusd.RLM_MODULE_OK
+-- Add username_owner to radpostauth for auth logging per ISP owner
+ALTER TABLE radpostauth
+    ADD COLUMN IF NOT EXISTS username_owner VARCHAR(64) COMMENT 'ISP owner username',
+    ADD INDEX IF NOT EXISTS idx_username_owner (username_owner);
+EOSQL
 
-    except Exception:
-        return radiusd.RLM_MODULE_FAIL
+    print_success "Multi-tenant RADIUS tables created successfully"
+
+    print_status "Configuring FreeRADIUS SQL module..."
+    # Determine FreeRADIUS version directory
+    FREERADIUS_DIR="/etc/freeradius/3.0"
+    if [ ! -d "$FREERADIUS_DIR" ]; then
+        FREERADIUS_DIR="/etc/freeradius/3.2"
+    fi
+
+    # Enable SQL module
+    if [ ! -L "${FREERADIUS_DIR}/mods-enabled/sql" ]; then
+        ln -s ${FREERADIUS_DIR}/mods-available/sql ${FREERADIUS_DIR}/mods-enabled/sql
+    fi
+
+    # Configure SQL connection
+    SQL_CONF="${FREERADIUS_DIR}/mods-enabled/sql"
+
+    # Backup original
+    cp ${SQL_CONF} ${SQL_CONF}.backup 2>/dev/null || true
+
+    # Update SQL configuration
+    sed -i "s/driver = \"rlm_sql_null\"/driver = \"rlm_sql_mysql\"/" ${SQL_CONF}
+    sed -i "s/dialect = \"sqlite\"/dialect = \"mysql\"/" ${SQL_CONF}
+    sed -i "s/^.*server = .*/\tserver = \"localhost\"/" ${SQL_CONF}
+    sed -i "s/^.*port = .*/\tport = 3306/" ${SQL_CONF}
+    sed -i "s/^.*login = .*/\tlogin = \"${RADIUS_DB_USER}\"/" ${SQL_CONF}
+    sed -i "s/^.*password = .*/\tpassword = \"${RADIUS_DB_PASS}\"/" ${SQL_CONF}
+    sed -i "s/^.*radius_db = .*/\tradius_db = \"${RADIUS_DB_NAME}\"/" ${SQL_CONF}
+
+    print_success "SQL module configured"
+
+    print_status "Adding MikroTik as RADIUS client..."
+    CLIENTS_CONF="${FREERADIUS_DIR}/clients.conf"
+
+    # Check if MikroTik client already exists
+    if ! grep -q "client mikrotik" ${CLIENTS_CONF}; then
+        cat >> ${CLIENTS_CONF} << EOF
+
+# MikroTik devices
+client mikrotik {
+    ipaddr = 0.0.0.0/0
+    secret = ${RADIUS_SECRET}
+    shortname = mikrotik
+    nas_type = other
+}
 EOF
+        print_success "MikroTik client added to RADIUS"
+    else
+        print_warning "MikroTik client already configured"
+    fi
 
-    print_success "FreeRADIUS prepared (manual configuration required)"
+    print_status "Testing RADIUS configuration..."
+    if freeradius -CX; then
+        print_success "Configuration valid!"
+    else
+        print_error "Configuration has errors. Please check."
+        return 1
+    fi
+
+    print_status "Starting FreeRADIUS service..."
+    systemctl stop freeradius 2>/dev/null || true
+    systemctl start freeradius
+    systemctl enable freeradius
+
+    # Check status
+    if systemctl is-active --quiet freeradius; then
+        print_success "FreeRADIUS setup complete and running!"
+        echo ""
+        echo -e "${GREEN}Database:${NC} ${RADIUS_DB_NAME}"
+        echo -e "${GREEN}DB User:${NC} ${RADIUS_DB_USER}"
+        echo -e "${GREEN}DB Password:${NC} ${RADIUS_DB_PASS}"
+        echo -e "${GREEN}RADIUS Secret:${NC} ${RADIUS_SECRET}"
+        echo ""
+        print_warning "Add these to your .env file:"
+        echo "RADIUS_DB_HOST=localhost"
+        echo "RADIUS_DB_PORT=3306"
+        echo "RADIUS_DB_USER=${RADIUS_DB_USER}"
+        echo "RADIUS_DB_PASS=${RADIUS_DB_PASS}"
+        echo "RADIUS_DB_NAME=${RADIUS_DB_NAME}"
+    else
+        print_error "FreeRADIUS failed to start. Check logs:"
+        echo "sudo journalctl -u freeradius -n 50"
+        return 1
+    fi
 }
 
 initialize_database() {

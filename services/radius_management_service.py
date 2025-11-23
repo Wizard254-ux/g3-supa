@@ -345,36 +345,42 @@ class RadiusManagementService:
     # ==================== CUSTOMER MANAGEMENT ====================
 
     def create_customer(self, username: str, customer_username: str,
-                       password: str, package_id: int) -> Dict[str, Any]:
+                       password: str, package_id: int = None) -> Dict[str, Any]:
         """
-        Create a new RADIUS customer
+        Create a new RADIUS customer (with or without package assignment)
 
         Args:
             username: ISP owner username
             customer_username: Customer's username (will be appended with @username)
             password: Customer's password
-            package_id: Package ID to assign
+            package_id: Package ID to assign (optional - can assign later)
 
         Returns:
             Dict with success status and customer details
         """
-        logger.info("Creating customer", username=username, customer_username=customer_username)
+        logger.info("Creating customer", username=username, customer_username=customer_username,
+                   package_id=package_id)
 
         try:
             with self.get_db_connection() as conn:
                 with conn.cursor() as cursor:
-                    # Verify package belongs to this username
-                    cursor.execute("""
-                        SELECT id, download_speed, upload_speed FROM packages
-                        WHERE id = %s AND username = %s
-                    """, (package_id, username))
+                    package = None
+                    rate_limit = None
 
-                    package = cursor.fetchone()
-                    if not package:
-                        return {
-                            'success': False,
-                            'error': 'Package not found or does not belong to you'
-                        }
+                    # If package_id provided, verify it belongs to this username
+                    if package_id is not None:
+                        cursor.execute("""
+                            SELECT id, download_speed, upload_speed FROM packages
+                            WHERE id = %s AND username = %s
+                        """, (package_id, username))
+
+                        package = cursor.fetchone()
+                        if not package:
+                            return {
+                                'success': False,
+                                'error': 'Package not found or does not belong to you'
+                            }
+                        rate_limit = f"{package['download_speed']}/{package['upload_speed']}"
 
                     # Build full customer username with realm
                     full_username = f"{customer_username}@{username}"
@@ -400,29 +406,36 @@ class RadiusManagementService:
 
                     customer_id = cursor.lastrowid
 
-                    # Insert rate limit into radreply
-                    rate_limit = f"{package['download_speed']}/{package['upload_speed']}"
-                    cursor.execute("""
-                        INSERT INTO radreply
-                        (username, attribute, op, value)
-                        VALUES (%s, 'Mikrotik-Rate-Limit', ':=', %s)
-                    """, (full_username, rate_limit))
+                    # Insert rate limit into radreply ONLY if package assigned
+                    if rate_limit:
+                        cursor.execute("""
+                            INSERT INTO radreply
+                            (username, attribute, op, value)
+                            VALUES (%s, 'Mikrotik-Rate-Limit', ':=', %s)
+                        """, (full_username, rate_limit))
 
                     conn.commit()
 
                     logger.info("Customer created successfully", customer_id=customer_id,
-                              full_username=full_username)
+                              full_username=full_username, has_package=package is not None)
 
-                    return {
+                    response = {
                         'success': True,
                         'customer': {
                             'id': customer_id,
                             'username': full_username,
                             'package_id': package_id,
-                            'rate_limit': rate_limit,
                             'status': 'active'
                         }
                     }
+
+                    if rate_limit:
+                        response['customer']['rate_limit'] = rate_limit
+                    else:
+                        response['customer']['rate_limit'] = None
+                        response['message'] = 'Customer created without package. Assign package later.'
+
+                    return response
 
         except Exception as e:
             logger.error("Failed to create customer", error=str(e), exc_info=True)
