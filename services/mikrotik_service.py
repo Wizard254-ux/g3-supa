@@ -1612,14 +1612,21 @@ class MikroTikService:
                                     'keepalive-timeout': str(config.get('keepalive_timeout', 60)),
                                     'comment': f'Created by {isp_brand}'
                                 }
+
+                                # Set disabled status during creation (not after)
+                                if iface_config.get('auto_enable', False):
+                                    server_config['disabled'] = 'no'
+                                    logger.info("Creating PPPoE server in ENABLED state")
+                                else:
+                                    server_config['disabled'] = 'yes'
+                                    logger.info("Creating PPPoE server in DISABLED state")
+
                                 logger.info(f"PPPoE server config: {server_config}")
                                 logger.info("Calling pppoe_server.add()...")
                                 pppoe_server.add(**server_config)
                                 logger.info("PPPoE server.add() completed")
 
                                 if iface_config.get('auto_enable', False):
-                                    logger.info("Enabling PPPoE server...")
-                                    pppoe_server.update(**{'.id': '*last'}, disabled='no')
                                     setup_steps.append(f"Created and enabled PPPoE server {service_name}")
                                     logger.info("PPPoE server created and enabled")
                                 else:
