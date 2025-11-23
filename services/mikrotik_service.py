@@ -1575,50 +1575,66 @@ class MikroTikService:
                             logger.info(f"Existing PPPoE server query result: {existing_server}")
 
                             if existing_server:
-                            logger.info(f"PPPoE server {service_name} exists, updating...")
-                            server_id = existing_server[0]['.id']
+                                logger.info(f"PPPoE server {service_name} exists, updating...")
+                                server_id = existing_server[0]['.id']
 
-                            # Update interface and disabled status
-                            update_config = {
-                                '.id': server_id,
-                                'interface': bridge_name
-                            }
+                                # Update interface and disabled status
+                                update_config = {
+                                    '.id': server_id,
+                                    'interface': bridge_name
+                                }
 
-                            # Handle auto_enable for existing servers
-                            if iface_config.get('auto_enable', False):
-                                update_config['disabled'] = 'no'
-                                logger.info("Setting server to enabled")
+                                # Handle auto_enable for existing servers
+                                if iface_config.get('auto_enable', False):
+                                    update_config['disabled'] = 'no'
+                                    logger.info("Setting server to enabled")
+                                else:
+                                    update_config['disabled'] = 'yes'
+                                    logger.info("Setting server to disabled")
+
+                                logger.info("Calling pppoe_server.update()...")
+                                pppoe_server.update(**update_config)
+                                logger.info("PPPoE server update completed")
+
+                                if iface_config.get('auto_enable', False):
+                                    setup_steps.append(f"Updated and enabled PPPoE server {service_name}")
+                                    logger.info("PPPoE server updated and enabled")
+                                else:
+                                    setup_steps.append(f"Updated PPPoE server {service_name} (disabled)")
+                                    logger.info("PPPoE server updated (disabled)")
                             else:
-                                update_config['disabled'] = 'yes'
-                                logger.info("Setting server to disabled")
+                                logger.info(f"Creating new PPPoE server {service_name}...")
+                                server_config = {
+                                    'service-name': service_name,
+                                    'interface': bridge_name,
+                                    'default-profile': profile_name,
+                                    'authentication': config.get('authentication', 'pap,chap,mschap1,mschap2'),
+                                    'keepalive-timeout': str(config.get('keepalive_timeout', 60)),
+                                    'comment': f'Created by {isp_brand}'
+                                }
+                                logger.info(f"PPPoE server config: {server_config}")
+                                logger.info("Calling pppoe_server.add()...")
+                                pppoe_server.add(**server_config)
+                                logger.info("PPPoE server.add() completed")
 
-                            pppoe_server.update(**update_config)
+                                if iface_config.get('auto_enable', False):
+                                    logger.info("Enabling PPPoE server...")
+                                    pppoe_server.update(**{'.id': '*last'}, disabled='no')
+                                    setup_steps.append(f"Created and enabled PPPoE server {service_name}")
+                                    logger.info("PPPoE server created and enabled")
+                                else:
+                                    setup_steps.append(f"Created PPPoE server {service_name} (disabled)")
+                                    logger.info("PPPoE server created (disabled)")
 
-                            if iface_config.get('auto_enable', False):
-                                setup_steps.append(f"Updated and enabled PPPoE server {service_name}")
-                                logger.info("PPPoE server updated and enabled")
-                            else:
-                                setup_steps.append(f"Updated PPPoE server {service_name} (disabled)")
-                                logger.info("PPPoE server updated (disabled)")
-                        else:
-                            logger.info(f"Creating new PPPoE server {service_name}...")
-                            server_config = {
-                                'service-name': service_name,
-                                'interface': bridge_name,
-                                'default-profile': profile_name,
-                                'authentication': config.get('authentication', 'pap,chap,mschap1,mschap2'),
-                                'keepalive-timeout': str(config.get('keepalive_timeout', 60)),
-                                'comment': f'Created by {isp_brand}'
-                            }
-                            pppoe_server.add(**server_config)
-
-                            if iface_config.get('auto_enable', False):
-                                pppoe_server.update(**{'.id': '*last'}, disabled='no')
-                                setup_steps.append(f"Created and enabled PPPoE server {service_name}")
-                                logger.info("PPPoE server created and enabled")
-                            else:
-                                setup_steps.append(f"Created PPPoE server {service_name} (disabled)")
-                                logger.info("PPPoE server created (disabled)")
+                        except TimeoutError as te:
+                            error_msg = f"Timeout while configuring PPPoE server {service_name}. MikroTik may be busy or unresponsive."
+                            logger.error(error_msg)
+                            raise Exception(error_msg)
+                        except Exception as pppoe_error:
+                            error_msg = f"Failed to configure PPPoE server {service_name}: {str(pppoe_error)}"
+                            logger.error(error_msg)
+                            logger.error(f"PPPoE error type: {type(pppoe_error).__name__}")
+                            raise Exception(error_msg)
 
                         interface_results.append({
                             'interface': interface,
