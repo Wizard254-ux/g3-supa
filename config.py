@@ -56,6 +56,13 @@ class Config:
     RADIUS_TIMEOUT = config('RADIUS_TIMEOUT', default=5, cast=int)
     RADIUS_RETRIES = config('RADIUS_RETRIES', default=3, cast=int)
 
+    # RADIUS Database Configuration (matches setup.sh defaults)
+    RADIUS_DB_HOST = config('RADIUS_DB_HOST', default='localhost')
+    RADIUS_DB_PORT = config('RADIUS_DB_PORT', default=3306, cast=int)
+    RADIUS_DB_USER = config('RADIUS_DB_USER', default='radius')
+    RADIUS_DB_PASS = config('RADIUS_DB_PASS', default='RadiusSecurePass2024!')
+    RADIUS_DB_NAME = config('RADIUS_DB_NAME', default='radius')
+
     # MikroTik Configuration
     MIKROTIK_DEVICES = [
         {
