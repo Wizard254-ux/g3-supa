@@ -83,12 +83,14 @@ def create_app(config_class=Config):
     from api.usage_api import usage_bp
     from api.vpn_api import vpn_bp
     from api.bandwidth_api import bandwidth_bp
+    from api.radius_management_api import radius_mgmt_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(mikrotik_bp, url_prefix='/api/mikrotik')
     app.register_blueprint(usage_bp, url_prefix='/api/usage')
     app.register_blueprint(vpn_bp, url_prefix='/api/vpn')
     app.register_blueprint(bandwidth_bp, url_prefix='/api/bandwidth')
+    app.register_blueprint(radius_mgmt_bp, url_prefix='/api/radius')
 
     # @app.route("/")
     # def home():
