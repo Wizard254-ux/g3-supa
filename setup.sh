@@ -1762,8 +1762,16 @@ setup_freeradius() {
     RADIUS_DB_PASS="RadiusSecurePass2024!"
     RADIUS_SECRET="testing123"
 
+    print_status "Installing MySQL server..."
+    apt update
+    apt install -y mysql-server mysql-client
+    systemctl start mysql
+    systemctl enable mysql
+    print_success "MySQL installed and started"
+
     print_status "Installing FreeRADIUS packages..."
-    # Packages are already installed in setup_packages
+    apt install -y freeradius freeradius-mysql freeradius-utils
+    print_success "FreeRADIUS packages installed"
 
     print_status "Creating RADIUS database and user..."
     mysql -e "CREATE DATABASE IF NOT EXISTS ${RADIUS_DB_NAME};" || true
