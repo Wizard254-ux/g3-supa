@@ -1167,53 +1167,74 @@ class MikroTikService:
                                         interface: str, hotspot_name: str, config: Dict) -> Dict:
         """Configure hotspot server with all prerequisites (bridge, pool, port assignment)"""
         try:
+            logger.info(f"=== configure_hotspot_server_dynamic called ===")
+            logger.info(f"Parameters - Host: {host}, Port: {port}, User: {username}")
+            logger.info(f"Interface: {interface}, Hotspot name: {hotspot_name}")
+            logger.info(f"Config: {config}")
+
             import librouteros
-            
+
+            logger.info(f"Connecting to {host}:{port}...")
             api = librouteros.connect(
                 host=host, username=username, password=password, port=port, timeout=10
             )
-            
+            logger.info("Connection established")
+
             isp_brand = self.app.config.get('ISP_BRAND', 'f2net')
             bridge_name = self.app.config.get('ISP_BRIDGE_NAME', f'{isp_brand}_bridge')
             pool_name = self.app.config.get('ISP_POOL_NAME', f'{isp_brand}_pool')
-            
+
+            logger.info(f"ISP: {isp_brand}, Bridge: {bridge_name}, Pool: {pool_name}")
             setup_results = []
-            
+
             # 1. Ensure bridge exists
+            logger.info("Step 1: Checking/creating bridge...")
             bridge_interface = api.path('/interface/bridge')
             all_bridges = list(bridge_interface.select('name'))
             bridge_names = [b.get('name', '') for b in all_bridges]
-            
+            logger.info(f"Existing bridges: {bridge_names}")
+
             if bridge_name not in bridge_names:
+                logger.info(f"Creating bridge {bridge_name}...")
                 bridge_interface.add(
                     name=bridge_name,
                     **{'auto-mac': 'yes'},
                     comment=f'Created by {isp_brand}'
                 )
                 setup_results.append(f"Created bridge {bridge_name}")
+                logger.info("Bridge created")
             else:
                 setup_results.append(f"Bridge {bridge_name} exists")
-            
+                logger.info("Bridge already exists")
+
             # 2. Ensure IP pool exists
+            logger.info("Step 2: Checking/creating IP pool...")
             ip_pool = api.path('/ip/pool')
             all_pools = list(ip_pool.select('name'))
             pool_names = [p.get('name', '') for p in all_pools]
-            
+            logger.info(f"Existing pools: {pool_names}")
+
             if pool_name not in pool_names:
+                logger.info(f"Creating pool {pool_name}...")
                 ip_pool.add(
                     name=pool_name,
                     ranges='172.31.0.2-172.31.255.254'
                 )
                 setup_results.append(f"Created pool {pool_name}")
+                logger.info("Pool created")
             else:
                 setup_results.append(f"Pool {pool_name} exists")
-            
+                logger.info("Pool already exists")
+
             # 3. Ensure bridge has IP address
+            logger.info("Step 3: Checking/assigning bridge IP...")
             ip_address = api.path('/ip/address')
             all_addresses = list(ip_address.select('address', 'interface'))
             bridge_addresses = [a for a in all_addresses if a.get('interface') == bridge_name]
-            
+            logger.info(f"Bridge addresses: {bridge_addresses}")
+
             if not bridge_addresses:
+                logger.info("Assigning IP to bridge...")
                 ip_address.add(
                     address='172.31.0.1/16',
                     interface=bridge_name,
@@ -1221,23 +1242,29 @@ class MikroTikService:
                     comment=f'{isp_brand} bridge IP'
                 )
                 setup_results.append(f"Assigned IP to {bridge_name}")
+                logger.info("IP assigned")
             else:
                 setup_results.append(f"IP already assigned to {bridge_name}")
-            
+                logger.info("IP already assigned")
+
             # 4. Remove interface from any existing bridge first
+            logger.info(f"Step 4: Checking if {interface} is in another bridge...")
             bridge_port = api.path('/interface/bridge/port')
             all_ports = list(bridge_port.select('.id', 'interface', 'bridge'))
-            
+
             for port in all_ports:
                 if port.get('interface') == interface:
                     current_bridge = port.get('bridge')
+                    logger.info(f"{interface} is in bridge: {current_bridge}")
                     if current_bridge != bridge_name:
+                        logger.info(f"Removing {interface} from {current_bridge}...")
                         bridge_port.remove(port['.id'])
                         setup_results.append(f"Removed {interface} from {current_bridge}")
-                        logger.info(f"Removed {interface} from {current_bridge}")
+                        logger.info(f"Removed {interface} from bridge")
                     break
-            
+
             # 5. Add interface to target bridge
+            logger.info(f"Step 5: Adding {interface} to {bridge_name}...")
             try:
                 bridge_port.add(
                     interface=interface,
@@ -1248,18 +1275,23 @@ class MikroTikService:
                 logger.info(f"Added {interface} to {bridge_name}")
             except Exception as e:
                 if 'already added' not in str(e):
+                    logger.error(f"Error adding to bridge: {str(e)}")
                     raise e
                 setup_results.append(f"{interface} already in {bridge_name}")
-            
-            # 5. Create hotspot profile
+                logger.info(f"{interface} already in {bridge_name}")
+
+            # 6. Create hotspot profile
+            logger.info("Step 6: Checking/creating hotspot profile...")
             hotspot_profile = api.path('/ip/hotspot/profile')
             profile_name = f'{isp_brand}-hotspot-profile'
-            
-            # Get all profiles first
+
+            logger.info("Getting existing hotspot profiles...")
             all_profiles = list(hotspot_profile.select('name'))
             profile_names = [p.get('name', '') for p in all_profiles]
-            
+            logger.info(f"Existing hotspot profiles: {profile_names}")
+
             if profile_name not in profile_names:
+                logger.info(f"Creating hotspot profile {profile_name}...")
                 profile_config = {
                     'name': profile_name,
                     'hotspot-address': '172.31.0.1',
@@ -1267,41 +1299,58 @@ class MikroTikService:
                     'html-directory': 'hotspot',
                     'login-by': 'http-chap,http-pap'
                 }
+                logger.info(f"Profile config: {profile_config}")
                 hotspot_profile.add(**profile_config)
                 setup_results.append(f"Created hotspot profile {profile_name}")
+                logger.info("Hotspot profile created")
             else:
                 setup_results.append(f"Hotspot profile {profile_name} exists")
-            
-            # 6. Configure hotspot server on bridge
+                logger.info("Hotspot profile already exists")
+
+            # 7. Configure hotspot server on bridge
+            logger.info("Step 7: Configuring hotspot server...")
             hotspot = api.path('/ip/hotspot')
-            
+
+            logger.info(f"Checking if hotspot {hotspot_name} exists...")
             existing_hotspot = list(hotspot.select('.id', 'name').where('name', hotspot_name))
+            logger.info(f"Existing hotspot search result: {existing_hotspot}")
+
             if existing_hotspot:
-                # Update existing hotspot to use bridge
+                logger.info(f"Hotspot {hotspot_name} exists, updating...")
                 hotspot.update(
                     **{'.id': existing_hotspot[0]['.id']},
                     interface=bridge_name
                 )
                 setup_results.append(f"Updated hotspot {hotspot_name} to use bridge {bridge_name}")
+                logger.info("Hotspot updated")
             else:
-                # Create new hotspot on bridge
+                logger.info(f"Creating new hotspot {hotspot_name}...")
                 hotspot_config = {
                     'name': hotspot_name,
                     'interface': bridge_name,
                     'address-pool': pool_name,
-                    'profile': f'{isp_brand}-hotspot-profile',
-                    'addresses-per-mac': config['addresses_per_mac']
+                    'profile': profile_name,
+                    'addresses-per-mac': config.get('addresses_per_mac', 1)
                 }
+                logger.info(f"Hotspot config: {hotspot_config}")
+                logger.info("Calling hotspot.add()...")
                 hotspot.add(**hotspot_config)
+                logger.info("Hotspot.add() completed")
+
                 if config.get('auto_enable', False):
+                    logger.info("Enabling hotspot server...")
                     hotspot.update(**{'.id': '*last'}, disabled='no')
                     setup_results.append(f"Created and enabled hotspot server {hotspot_name} on bridge {bridge_name}")
+                    logger.info("Hotspot enabled")
                 else:
                     setup_results.append(f"Created hotspot server {hotspot_name} on bridge {bridge_name} (disabled)")
-            
+                    logger.info("Hotspot created (disabled)")
+
+            logger.info("Closing connection...")
             api.close()
-            
-            return {
+            logger.info("Connection closed")
+
+            result = {
                 'success': True,
                 'hotspot_name': hotspot_name,
                 'interface': interface,
@@ -1309,9 +1358,13 @@ class MikroTikService:
                 'pool_name': pool_name,
                 'setup_results': setup_results
             }
-            
+            logger.info(f"Returning success result: {result}")
+            return result
+
         except Exception as e:
             logger.error(f"Failed to configure hotspot server {hotspot_name} on {interface}", error=str(e))
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception details: {str(e)}", exc_info=True)
             return {
                 'success': False,
                 'error': str(e)
