@@ -284,3 +284,136 @@ RADIUS_DB_USER=radius
 RADIUS_DB_PASS=RadiusSecurePass2024!
 RADIUS_SECRET=testing123
 ```
+
+  🔍 Status & Service Management
+
+  # Check FreeRADIUS service status                                                                                                                                                 
+  sudo systemctl status freeradius
+
+  # Start/Stop/Restart                                                                                                                                                              
+  sudo systemctl start freeradius
+  sudo systemctl stop freeradius
+  sudo systemctl restart freeradius
+
+  # Enable auto-start on boot                                                                                                                                                       
+  sudo systemctl enable freeradius
+
+  # Check if FreeRADIUS is running                                                                                                                                                  
+  ps aux | grep freeradius
+
+  ---
+  📋 Configuration Testing
+
+  # Test FreeRADIUS configuration (dry run)                                                                                                                                         
+  sudo freeradius -CX
+
+  # Run in debug mode (see detailed logs)                                                                                                                                           
+  sudo freeradius -X
+  # Press Ctrl+C to stop                                                                                                                                                            
+
+  # Check which modules are enabled                                                                                                                                                 
+  ls -la /etc/freeradius/3.0/mods-enabled/
+
+  ---
+  📊 Database Checks
+
+  # Connect to RADIUS database                                                                                                                                                      
+  mysql -u radius -p radius
+  # Password: RadiusSecurePass2024!                                                                                                                                                 
+
+  # Once in MySQL, run these:                                                                                                                                                       
+  SHOW TABLES;
+  SELECT * FROM packages;
+  SELECT * FROM radcheck;
+  SELECT username, package_id, status FROM radcheck;
+  DESC packages;
+  DESC radcheck;
+  EXIT;
+
+  ---
+  📝 View Logs
+
+  # Real-time logs                                                                                                                                                                  
+  sudo journalctl -u freeradius -f
+
+  # Last 50 lines                                                                                                                                                                   
+  sudo journalctl -u freeradius -n 50
+
+  # Logs since today                                                                                                                                                                
+  sudo journalctl -u freeradius --since today
+
+  # FreeRADIUS log files                                                                                                                                                            
+  sudo tail -f /var/log/freeradius/radius.log
+
+  # Check for errors                                                                                                                                                                
+  sudo grep -i error /var/log/freeradius/radius.log
+
+  ---
+  🧪 Test RADIUS Authentication
+
+  # Test local authentication (after creating a customer)                                                                                                                           
+  radtest username password localhost 0 testing123
+
+  # Example:                                                                                                                                                                        
+  radtest john@abutis secret123 localhost 0 testing123
+
+  # Expected output if successful:                                                                                                                                                  
+  # Sent Access-Request Id ...                                                                                                                                                      
+  # Received Access-Accept Id ...                                                                                                                                                   
+
+  ---
+  🔧 Quick Diagnostics
+
+  # Check if MySQL is running                                                                                                                                                       
+  sudo systemctl status mysql
+
+  # Check if FreeRADIUS can connect to MySQL                                                                                                                                        
+  sudo freeradius -X | grep -i sql
+
+  # Check FreeRADIUS version                                                                                                                                                        
+  freeradius -v
+
+  # List RADIUS ports                                                                                                                                                               
+  sudo netstat -tlnp | grep radius
+  # Should show ports 1812 (auth) and 1813 (accounting)                                                                                                                             
+
+  # Check SQL module configuration                                                                                                                                                  
+  sudo cat /etc/freeradius/3.0/mods-enabled/sql | grep -A 5 "mysql"                                                                                                                 
+
+  ---
+  🚨 Common Issues & Fixes
+
+  # If FreeRADIUS won't start:                                                                                                                                                      
+  sudo freeradius -CX  # Check config errors                                                                                                                                        
+
+  # If SQL connection fails:                                                                                                                                                        
+  mysql -u radius -p -e "SELECT 1"  # Test MySQL access                                                                                                                             
+
+  # Clear logs and restart                                                                                                                                                          
+  sudo systemctl stop freeradius
+  sudo rm /var/log/freeradius/*.log                                                                                                                                                 
+  sudo systemctl start freeradius
+
+  # Check file permissions                                                                                                                                                          
+  sudo chown -R freerad:freerad /etc/freeradius/3.0/
+  sudo chmod 640 /etc/freeradius/3.0/mods-enabled/sql
+
+ 📈 Monitor Active Sessions
+
+  # Check active RADIUS sessions                                                                                                                                                    
+  mysql -u radius -p radius -e "SELECT * FROM radacct WHERE acctstoptime IS NULL;"                                                                                                  
+
+  # Count active sessions                                                                                                                                                           
+  mysql -u radius -p radius -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NULL;"                                                                                           
+
+  ---
+  Start with these first:
+  # 1. Check if everything is running                                                                                                                                               
+  sudo systemctl status freeradius
+  sudo systemctl status mysql
+
+  # 2. Test configuration                                                                                                                                                           
+  sudo freeradius -CX
+
+  # 3. View real-time logs                                                                                                                                                          
+  sudo journalctl -u freeradius -f

@@ -1769,6 +1769,20 @@ setup_freeradius() {
     systemctl enable mysql
     print_success "MySQL installed and started"
 
+    # Ensure MySQL binds to localhost only (security)
+    print_status "Configuring MySQL to bind to localhost only..."
+    if [ -f /etc/mysql/mysql.conf.d/mysqld.cnf ]; then
+        # Check if bind-address already set
+        if grep -q "^bind-address" /etc/mysql/mysql.conf.d/mysqld.cnf; then
+            sed -i 's/^bind-address.*/bind-address = 127.0.0.1/' /etc/mysql/mysql.conf.d/mysqld.cnf
+        else
+            # Add bind-address under [mysqld] section
+            sed -i '/\[mysqld\]/a bind-address = 127.0.0.1' /etc/mysql/mysql.conf.d/mysqld.cnf
+        fi
+        systemctl restart mysql
+        print_success "MySQL bound to localhost (127.0.0.1) for security"
+    fi
+
     print_status "Installing FreeRADIUS packages..."
     apt install -y freeradius freeradius-mysql freeradius-utils
     print_success "FreeRADIUS packages installed"
@@ -1865,7 +1879,16 @@ EOSQL
     sed -i "s/^.*password = .*/\tpassword = \"${RADIUS_DB_PASS}\"/" ${SQL_CONF}
     sed -i "s/^.*radius_db = .*/\tradius_db = \"${RADIUS_DB_NAME}\"/" ${SQL_CONF}
 
-    print_success "SQL module configured"
+    # Disable MySQL SSL (safe for localhost connections)
+    print_status "Disabling MySQL SSL (localhost connection - no SSL needed)..."
+    sed -i '/tls {/,/}/d' ${SQL_CONF}
+    # Comment out any remaining SSL certificate references
+    sed -i 's|^\([[:space:]]*\)ca_file|#\1ca_file|g' ${SQL_CONF}
+    sed -i 's|^\([[:space:]]*\)ca_path|#\1ca_path|g' ${SQL_CONF}
+    sed -i 's|^\([[:space:]]*\)certificate_file|#\1certificate_file|g' ${SQL_CONF}
+    sed -i 's|^\([[:space:]]*\)private_key_file|#\1private_key_file|g' ${SQL_CONF}
+
+    print_success "SQL module configured (SSL disabled for localhost)"
 
     print_status "Adding MikroTik as RADIUS client..."
     CLIENTS_CONF="${FREERADIUS_DIR}/clients.conf"
