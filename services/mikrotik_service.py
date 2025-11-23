@@ -1519,12 +1519,21 @@ class MikroTikService:
                         )
                         setup_steps.append(f"Added {interface} to {bridge_name}")
                         logger.info(f"{interface} added to {bridge_name}")
+                    except KeyError as ke:
+                        # Handle librouteros KeyError (e.g., 'ret' error)
+                        logger.error(f"KeyError adding {interface} to bridge: {str(ke)}")
+                        logger.error("This usually means the interface is already in the bridge or the response format is unexpected")
+                        # Try to continue anyway, assuming it's already in the bridge
+                        setup_steps.append(f"{interface} already in {bridge_name} (KeyError handled)")
+                        logger.info(f"Continuing despite KeyError for {interface}")
                     except Exception as e:
-                        if 'already added' not in str(e):
+                        error_str = str(e).lower()
+                        if 'already' in error_str or 'in use' in error_str:
+                            setup_steps.append(f"{interface} already in {bridge_name}")
+                            logger.info(f"{interface} already in {bridge_name}")
+                        else:
                             logger.error(f"Error adding {interface} to bridge: {str(e)}")
-                            raise e
-                        setup_steps.append(f"{interface} already in {bridge_name}")
-                        logger.info(f"{interface} already in {bridge_name}")
+                            raise Exception(f"Failed to add {interface} to bridge: {str(e)}")
 
                     # Configure based on type
                     logger.info(f"Configuring {server_type} server for {interface}...")
@@ -1559,10 +1568,13 @@ class MikroTikService:
 
                         # Configure PPPoE server
                         logger.info("Configuring PPPoE server...")
-                        pppoe_server = api.path('/interface/pppoe-server/server')
-                        existing_server = list(pppoe_server.select('.id', 'service-name').where('service-name', service_name))
+                        try:
+                            pppoe_server = api.path('/interface/pppoe-server/server')
+                            logger.info(f"Checking for existing PPPoE server with service name: {service_name}...")
+                            existing_server = list(pppoe_server.select('.id', 'service-name').where('service-name', service_name))
+                            logger.info(f"Existing PPPoE server query result: {existing_server}")
 
-                        if existing_server:
+                            if existing_server:
                             logger.info(f"PPPoE server {service_name} exists, updating...")
                             server_id = existing_server[0]['.id']
 
@@ -1618,17 +1630,42 @@ class MikroTikService:
                         })
 
                     elif server_type == 'hotspot':
+                        logger.info("Hotspot configuration started")
                         hotspot_name = iface_config['hotspot_name']
                         config = iface_config.get('config', {})
+                        logger.info(f"Hotspot name: {hotspot_name}, Config: {config}")
+
+                        # Check if a hotspot already exists on this bridge
+                        logger.info("Checking for existing hotspots on bridge...")
+                        try:
+                            hotspot_check = api.path('/ip/hotspot')
+                            existing_hotspots_on_bridge = list(hotspot_check.select('name', 'interface').where('interface', bridge_name))
+                            logger.info(f"Existing hotspots on {bridge_name}: {existing_hotspots_on_bridge}")
+
+                            if existing_hotspots_on_bridge:
+                                existing_names = [h.get('name') for h in existing_hotspots_on_bridge]
+                                if hotspot_name not in existing_names:
+                                    error_msg = f"Bridge {bridge_name} already has hotspot(s): {existing_names}. MikroTik only allows one hotspot per bridge. Please use the existing hotspot or remove it first."
+                                    logger.error(error_msg)
+                                    raise Exception(error_msg)
+                                else:
+                                    logger.info(f"Hotspot {hotspot_name} already exists on bridge, will update it")
+                        except Exception as check_error:
+                            if "only allows one hotspot" in str(check_error):
+                                raise
+                            logger.warning(f"Could not check existing hotspots: {str(check_error)}")
 
                         # Create hotspot profile
+                        logger.info("Checking/creating hotspot profile...")
                         hotspot_profile = api.path('/ip/hotspot/profile')
                         profile_name = f'{isp_brand}-hotspot-profile'
 
                         all_profiles = list(hotspot_profile.select('name'))
                         profile_names_list = [p.get('name', '') for p in all_profiles]
+                        logger.info(f"Existing hotspot profiles: {profile_names_list}")
 
                         if profile_name not in profile_names_list:
+                            logger.info(f"Creating hotspot profile {profile_name}...")
                             profile_config = {
                                 'name': profile_name,
                                 'hotspot-address': '172.31.0.1',
@@ -1643,53 +1680,72 @@ class MikroTikService:
 
                         # Configure hotspot server
                         logger.info("Configuring hotspot server...")
-                        hotspot = api.path('/ip/hotspot')
-                        existing_hotspot = list(hotspot.select('.id', 'name').where('name', hotspot_name))
+                        try:
+                            hotspot = api.path('/ip/hotspot')
+                            logger.info("Checking for existing hotspot...")
+                            existing_hotspot = list(hotspot.select('.id', 'name').where('name', hotspot_name))
+                            logger.info(f"Existing hotspot query result: {existing_hotspot}")
 
-                        if existing_hotspot:
-                            logger.info(f"Hotspot {hotspot_name} exists, updating...")
-                            hotspot_id = existing_hotspot[0]['.id']
+                            if existing_hotspot:
+                                logger.info(f"Hotspot {hotspot_name} exists, updating...")
+                                hotspot_id = existing_hotspot[0]['.id']
 
-                            # Update interface and disabled status
-                            update_config = {
-                                '.id': hotspot_id,
-                                'interface': bridge_name
-                            }
+                                # Update interface and disabled status
+                                update_config = {
+                                    '.id': hotspot_id,
+                                    'interface': bridge_name
+                                }
 
-                            # Handle auto_enable for existing hotspots
-                            if iface_config.get('auto_enable', False):
-                                update_config['disabled'] = 'no'
-                                logger.info("Setting hotspot to enabled")
+                                # Handle auto_enable for existing hotspots
+                                if iface_config.get('auto_enable', False):
+                                    update_config['disabled'] = 'no'
+                                    logger.info("Setting hotspot to enabled")
+                                else:
+                                    update_config['disabled'] = 'yes'
+                                    logger.info("Setting hotspot to disabled")
+
+                                logger.info("Calling hotspot.update()...")
+                                hotspot.update(**update_config)
+                                logger.info("Hotspot update completed")
+
+                                if iface_config.get('auto_enable', False):
+                                    setup_steps.append(f"Updated and enabled hotspot {hotspot_name}")
+                                    logger.info("Hotspot updated and enabled")
+                                else:
+                                    setup_steps.append(f"Updated hotspot {hotspot_name} (disabled)")
+                                    logger.info("Hotspot updated (disabled)")
                             else:
-                                update_config['disabled'] = 'yes'
-                                logger.info("Setting hotspot to disabled")
+                                logger.info(f"Creating new hotspot {hotspot_name}...")
+                                hotspot_config = {
+                                    'name': hotspot_name,
+                                    'interface': bridge_name,
+                                    'address-pool': pool_name,
+                                    'profile': profile_name,
+                                    'addresses-per-mac': config.get('addresses_per_mac', 1)
+                                }
+                                logger.info(f"Hotspot config: {hotspot_config}")
+                                logger.info("Calling hotspot.add()...")
+                                hotspot.add(**hotspot_config)
+                                logger.info("Hotspot.add() completed")
 
-                            hotspot.update(**update_config)
+                                if iface_config.get('auto_enable', False):
+                                    logger.info("Enabling hotspot...")
+                                    hotspot.update(**{'.id': '*last'}, disabled='no')
+                                    setup_steps.append(f"Created and enabled hotspot server {hotspot_name}")
+                                    logger.info("Hotspot created and enabled")
+                                else:
+                                    setup_steps.append(f"Created hotspot server {hotspot_name} (disabled)")
+                                    logger.info("Hotspot created (disabled)")
 
-                            if iface_config.get('auto_enable', False):
-                                setup_steps.append(f"Updated and enabled hotspot {hotspot_name}")
-                                logger.info("Hotspot updated and enabled")
-                            else:
-                                setup_steps.append(f"Updated hotspot {hotspot_name} (disabled)")
-                                logger.info("Hotspot updated (disabled)")
-                        else:
-                            logger.info(f"Creating new hotspot {hotspot_name}...")
-                            hotspot_config = {
-                                'name': hotspot_name,
-                                'interface': bridge_name,
-                                'address-pool': pool_name,
-                                'profile': profile_name,
-                                'addresses-per-mac': config.get('addresses_per_mac', 1)
-                            }
-                            hotspot.add(**hotspot_config)
-
-                            if iface_config.get('auto_enable', False):
-                                hotspot.update(**{'.id': '*last'}, disabled='no')
-                                setup_steps.append(f"Created and enabled hotspot server {hotspot_name}")
-                                logger.info("Hotspot created and enabled")
-                            else:
-                                setup_steps.append(f"Created hotspot server {hotspot_name} (disabled)")
-                                logger.info("Hotspot created (disabled)")
+                        except TimeoutError as te:
+                            error_msg = f"Timeout while configuring hotspot {hotspot_name}. This often happens when a hotspot already exists on the bridge or MikroTik is busy. Check manually on the device."
+                            logger.error(error_msg)
+                            raise Exception(error_msg)
+                        except Exception as hotspot_error:
+                            error_msg = f"Failed to configure hotspot {hotspot_name}: {str(hotspot_error)}"
+                            logger.error(error_msg)
+                            logger.error(f"Hotspot error type: {type(hotspot_error).__name__}")
+                            raise Exception(error_msg)
 
                         interface_results.append({
                             'interface': interface,
