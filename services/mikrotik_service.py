@@ -1754,11 +1754,17 @@ class MikroTikService:
                             # Profile exists - delete and recreate with correct settings
                             logger.info(f"Hotspot profile {profile_name} exists, recreating with correct settings...")
                             try:
-                                profile_to_delete = list(hotspot_profile.select('.id', 'name').where('name', profile_name))
-                                if profile_to_delete:
-                                    profile_id = profile_to_delete[0]['.id']
+                                # Get all profiles and filter manually (where() clause doesn't work reliably)
+                                all_profile_details = list(hotspot_profile.select('.id', 'name'))
+                                matching_profiles = [p for p in all_profile_details if p.get('name') == profile_name]
+
+                                if matching_profiles:
+                                    profile_id = matching_profiles[0]['.id']
+                                    logger.info(f"Found profile to delete: {profile_name} with ID: {profile_id}")
                                     hotspot_profile.remove(profile_id)
                                     logger.info(f"Deleted old profile {profile_name}")
+                                else:
+                                    logger.warning(f"Profile {profile_name} not found in profile list")
                             except Exception as delete_error:
                                 logger.error(f"Failed to delete old profile: {str(delete_error)}", exc_info=True)
 
