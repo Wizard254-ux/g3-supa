@@ -1912,6 +1912,10 @@ EOF
 
     # Set permissions for Flask app to modify clients.conf
     print_status "Setting permissions for Flask app to manage RADIUS clients..."
+    # Directory needs group write permission
+    chmod 775 ${FREERADIUS_DIR}
+    chown freerad:freerad ${FREERADIUS_DIR}
+    # File needs group write permission
     chmod 664 ${CLIENTS_CONF}
     chown freerad:freerad ${CLIENTS_CONF}
     # Add Flask user to freerad group
