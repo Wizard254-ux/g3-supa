@@ -857,7 +857,7 @@ client {identity} {{
             # Reload FreeRADIUS to apply changes
             logger.info("Reloading FreeRADIUS service...")
             result = subprocess.run(
-                ['systemctl', 'reload', 'freeradius'],
+                ['sudo', 'systemctl', 'reload', 'freeradius'],
                 capture_output=True,
                 text=True,
                 timeout=10
