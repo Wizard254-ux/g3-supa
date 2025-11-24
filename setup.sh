@@ -1910,6 +1910,14 @@ EOF
         print_warning "MikroTik client already configured"
     fi
 
+    # Set permissions for Flask app to modify clients.conf
+    print_status "Setting permissions for Flask app to manage RADIUS clients..."
+    chmod 664 ${CLIENTS_CONF}
+    chown freerad:freerad ${CLIENTS_CONF}
+    # Add Flask user to freerad group
+    usermod -a -G freerad ${APP_USER} 2>/dev/null || true
+    print_success "Permissions set: ${APP_USER} can now modify RADIUS clients"
+
     print_status "Testing RADIUS configuration..."
     if freeradius -CX; then
         print_success "Configuration valid!"
