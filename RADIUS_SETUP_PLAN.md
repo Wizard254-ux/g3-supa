@@ -37,7 +37,19 @@ This document outlines the complete setup process for integrating FreeRADIUS wit
     - MikroTik: /radius configuration
   3. RADIUS_DB_PASS - Use a complex password:
    Example strong password                                                                                                                                                         
-  RADIUS_DB_PASS="aB3$mK9#pQ2@xY7!"  
+  RADIUS_DB_PASS="aB3$mK9#pQ2@xY7!"
+
+
+ # Command for radius permission issues Just run these 4 commands as root:                                                                                                                                              
+  1)usermod -a -G freerad f2net_isp
+  2)chmod 775 /etc/freeradius/3.0/
+  3)chmod 664 /etc/freeradius/3.0/clients.conf
+ testing with:                                                                                                                                                                           
+  sudo -u f2net_isp touch /etc/freeradius/3.0/test_write
+ clearing testfile :
+  rm /etc/freeradius/3.0/test_write
+   
+
 
 ### Flow:
 1. **User Management**: Your API → MySQL (add/remove users, assign packages)
