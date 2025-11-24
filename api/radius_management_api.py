@@ -646,3 +646,60 @@ def delete_customer(customer_username):
             'success': False,
             'error': f'Internal server error: {str(e)}'
         }), 500
+
+
+# ==================== MIKROTIK RADIUS CLIENT ENDPOINTS ====================
+
+@radius_mgmt_bp.route('/register-mikrotik', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['username', 'identity', 'secret', 'ip_address']
+)
+def register_mikrotik():
+    """
+    Register a MikroTik device as a RADIUS client
+
+    Request body:
+    {
+        "username": "abutis",
+        "identity": "abutis_Mikrotik2727",
+        "secret": "dZ9YIY1Ymc0j1NII",
+        "ip_address": "41.90.x.x"
+    }
+
+    Response:
+    {
+        "success": true,
+        "message": "MikroTik abutis_Mikrotik2727 registered as RADIUS client",
+        "identity": "abutis_Mikrotik2727",
+        "ip_address": "41.90.x.x"
+    }
+    """
+    try:
+        data = request.get_json()
+        username = data['username']
+        identity = data['identity']
+        secret = data['secret']
+        ip_address = data['ip_address']
+
+        logger.info("Register MikroTik request",
+                   username=username, identity=identity, ip_address=ip_address)
+
+        service = RadiusManagementService(current_app)
+        result = service.register_mikrotik_radius_client(
+            username=username,
+            identity=identity,
+            secret=secret,
+            ip_address=ip_address
+        )
+
+        status_code = 200 if result['success'] else 400
+        return jsonify(result), status_code
+
+    except Exception as e:
+        logger.error("Register MikroTik failed", error=str(e), exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500

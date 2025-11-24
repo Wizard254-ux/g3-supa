@@ -153,6 +153,7 @@ class Config:
     ISP_BRAND = config('ISP_BRAND', default='f2net')
     ISP_BRIDGE_NAME = f"{ISP_BRAND}_bridge"
     ISP_POOL_NAME = f"{ISP_BRAND}_pool"
+    ISP_HOTSPOT_HTML_DIR = config('ISP_HOTSPOT_HTML_DIR', default='lomtech-hotspot')
 
 
 class DevelopmentConfig(Config):

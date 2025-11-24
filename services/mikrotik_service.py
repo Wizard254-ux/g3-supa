@@ -559,14 +559,25 @@ class MikroTikService:
                 'name': 'pppoe-profile',
                 'local-address': config['local_address'],
                 'remote-address': config['remote_address'],
-                'use-encryption': 'yes' if config['use_encryption'] else 'no'
+                'use-encryption': 'yes' if config['use_encryption'] else 'no',
+                'use-radius': 'yes'
             }
-            
+
             # Check if profile exists
             existing_profile = list(pppoe_profile.select('name').where('name', 'pppoe-profile'))
             if not existing_profile:
                 pppoe_profile.add(**profile_config)
-                logger.info("Created PPPoE profile")
+                logger.info("Created PPPoE profile with RADIUS enabled")
+            else:
+                # Profile exists, ensure RADIUS is enabled
+                profile_to_update = list(pppoe_profile.select('.id', 'name').where('name', 'pppoe-profile'))
+                if profile_to_update:
+                    profile_id = profile_to_update[0]['.id']
+                    pppoe_profile.update(**{
+                        '.id': profile_id,
+                        'use-radius': 'yes'
+                    })
+                    logger.info("Updated PPPoE profile to enable RADIUS")
             
             # Configure PPPoE server
             pppoe_server = api.path('/interface/pppoe-server/server')
@@ -611,11 +622,12 @@ class MikroTikService:
             
             # Create hotspot profile first
             hotspot_profile = api.path('/ip/hotspot/profile')
+            html_directory = self.app.config.get('ISP_HOTSPOT_HTML_DIR', 'lomtech-hotspot')
             profile_config = {
                 'name': 'hotspot-profile',
                 'hotspot-address': '172.31.0.1',
                 'dns-name': 'router.local',
-                'html-directory': 'hotspot',
+                'html-directory': html_directory,
                 'login-by': 'http-chap,http-pap'
             }
             
@@ -1110,12 +1122,23 @@ class MikroTikService:
                     'local-address': config['local_address'],
                     'remote-address': pool_name,
                     'use-encryption': 'yes' if config['use_encryption'] else 'no',
+                    'use-radius': 'yes',
                     'comment': f'Created by {isp_brand}'
                 }
                 pppoe_profile.add(**profile_config)
-                setup_results.append(f"Created PPPoE profile {profile_name}")
+                setup_results.append(f"Created PPPoE profile {profile_name} with RADIUS enabled")
             else:
-                setup_results.append(f"PPPoE profile {profile_name} exists")
+                # Profile exists, ensure RADIUS is enabled
+                profile_to_update = list(pppoe_profile.select('.id', 'name').where('name', profile_name))
+                if profile_to_update:
+                    profile_id = profile_to_update[0]['.id']
+                    pppoe_profile.update(**{
+                        '.id': profile_id,
+                        'use-radius': 'yes'
+                    })
+                    setup_results.append(f"PPPoE profile {profile_name} exists, RADIUS enabled")
+                else:
+                    setup_results.append(f"PPPoE profile {profile_name} exists")
             
             # 6. Configure PPPoE server on bridge
             pppoe_server = api.path('/interface/pppoe-server/server')
@@ -1294,11 +1317,12 @@ class MikroTikService:
 
             if profile_name not in profile_names:
                 logger.info(f"Creating hotspot profile {profile_name}...")
+                html_directory = self.app.config.get('ISP_HOTSPOT_HTML_DIR', 'lomtech-hotspot')
                 profile_config = {
                     'name': profile_name,
                     'hotspot-address': '172.31.0.1',
                     'dns-name': 'router.local',
-                    'html-directory': 'hotspot',
+                    'html-directory': html_directory,
                     'login-by': 'http-chap,http-pap'
                 }
                 logger.info(f"Profile config: {profile_config}")
@@ -1391,8 +1415,18 @@ class MikroTikService:
             }
 
     def configure_multiple_servers_dynamic(self, username: str, password: str, host: str, port: int,
-                                          interfaces_config: List[Dict]) -> Dict:
-        """Configure multiple interfaces as PPPoE or Hotspot servers in a single connection"""
+                                          interfaces_config: List[Dict],
+                                          radius_secret: str = None,
+                                          device_name: str = None,
+                                          isp_owner: str = None) -> Dict:
+        """
+        Configure multiple interfaces as PPPoE or Hotspot servers in a single connection
+
+        Args:
+            radius_secret: The router's password (same as used for VPN and RADIUS)
+            device_name: The router's full identity (e.g., "abutis_Mikrotik1")
+            isp_owner: The company slug (e.g., "abutis")
+        """
         try:
             logger.info("=== configure_multiple_servers_dynamic called ===")
             logger.info(f"Host: {host}, Port: {port}, User: {username}")
@@ -1559,12 +1593,26 @@ class MikroTikService:
                                 'local-address': config.get('local_address', '172.31.0.1'),
                                 'remote-address': pool_name,
                                 'use-encryption': 'yes' if config.get('use_encryption', True) else 'no',
+                                'use-radius': 'yes',
                                 'comment': f'Created by {isp_brand}'
                             }
                             pppoe_profile.add(**profile_config)
-                            setup_steps.append(f"Created PPPoE profile {profile_name}")
+                            setup_steps.append(f"Created PPPoE profile {profile_name} with RADIUS enabled")
+                            logger.info(f"PPPoE profile {profile_name} created with use-radius=yes")
                         else:
-                            setup_steps.append(f"PPPoE profile {profile_name} exists")
+                            # Profile exists, ensure RADIUS is enabled
+                            logger.info(f"PPPoE profile {profile_name} exists, enabling RADIUS...")
+                            profile_to_update = list(pppoe_profile.select('.id', 'name').where('name', profile_name))
+                            if profile_to_update:
+                                profile_id = profile_to_update[0]['.id']
+                                pppoe_profile.update(**{
+                                    '.id': profile_id,
+                                    'use-radius': 'yes'
+                                })
+                                setup_steps.append(f"PPPoE profile {profile_name} exists, RADIUS enabled")
+                                logger.info(f"Updated PPPoE profile {profile_name} to use-radius=yes")
+                            else:
+                                setup_steps.append(f"PPPoE profile {profile_name} exists")
 
                         # Configure PPPoE server
                         logger.info("Configuring PPPoE server...")
@@ -1697,19 +1745,36 @@ class MikroTikService:
                         profile_names_list = [p.get('name', '') for p in all_profiles]
                         logger.info(f"Existing hotspot profiles: {profile_names_list}")
 
+                        html_directory = self.app.config.get('ISP_HOTSPOT_HTML_DIR', 'lomtech-hotspot')
+
                         if profile_name not in profile_names_list:
                             logger.info(f"Creating hotspot profile {profile_name}...")
                             profile_config = {
                                 'name': profile_name,
                                 'hotspot-address': '172.31.0.1',
                                 'dns-name': 'router.local',
-                                'html-directory': 'hotspot',
-                                'login-by': 'http-chap,http-pap'
+                                'html-directory': html_directory,
+                                'login-by': 'http-chap,http-pap',
+                                'use-radius': 'yes'
                             }
                             hotspot_profile.add(**profile_config)
-                            setup_steps.append(f"Created hotspot profile {profile_name}")
+                            setup_steps.append(f"Created hotspot profile {profile_name} with RADIUS enabled")
+                            logger.info(f"Hotspot profile {profile_name} created with use-radius=yes and html-directory={html_directory}")
                         else:
-                            setup_steps.append(f"Hotspot profile {profile_name} exists")
+                            # Profile exists, ensure RADIUS and html-directory are set
+                            logger.info(f"Hotspot profile {profile_name} exists, updating settings...")
+                            profile_to_update = list(hotspot_profile.select('.id', 'name').where('name', profile_name))
+                            if profile_to_update:
+                                profile_id = profile_to_update[0]['.id']
+                                hotspot_profile.update(**{
+                                    '.id': profile_id,
+                                    'use-radius': 'yes',
+                                    'html-directory': html_directory
+                                })
+                                setup_steps.append(f"Hotspot profile {profile_name} exists, updated RADIUS and html-directory")
+                                logger.info(f"Updated hotspot profile {profile_name}: use-radius=yes, html-directory={html_directory}")
+                            else:
+                                setup_steps.append(f"Hotspot profile {profile_name} exists")
 
                         # Configure hotspot server
                         logger.info("Configuring hotspot server...")
@@ -1825,6 +1890,72 @@ class MikroTikService:
             failed = len(interface_results) - successful
 
             logger.info(f"Summary: {successful} successful, {failed} failed out of {len(interface_results)} total")
+
+            # ===== REGISTER MIKROTIK AS RADIUS CLIENT =====
+            # This is CRITICAL - without this, RADIUS authentication will not work
+            if radius_secret and device_name and isp_owner:
+                logger.info("Registering MikroTik as RADIUS client...")
+                logger.info(f"Device: {device_name}, Owner: {isp_owner}, IP: {host}")
+
+                # Check if already registered in clients.conf
+                import os
+                clients_conf = '/etc/freeradius/3.0/clients.conf'
+                # device_name is already the full identity (e.g., "abutis_Mikrotik1")
+                identity = device_name
+
+                try:
+                    is_already_registered = False
+                    if os.path.exists(clients_conf):
+                        with open(clients_conf, 'r') as f:
+                            content = f.read()
+                            is_already_registered = f'client {identity}' in content
+
+                    if is_already_registered:
+                        logger.info(f"MikroTik {identity} already registered as RADIUS client, skipping...")
+                        global_setup_results.append(f"RADIUS client {identity} already registered")
+                    else:
+                        # Register as new RADIUS client
+                        from services.radius_management_service import RadiusManagementService
+                        radius_service = RadiusManagementService(self.app)
+
+                        radius_result = radius_service.register_mikrotik_radius_client(
+                            username=isp_owner,
+                            identity=identity,
+                            secret=radius_secret,
+                            ip_address=host
+                        )
+
+                        if not radius_result['success']:
+                            logger.error(f"CRITICAL: RADIUS registration failed: {radius_result.get('error')}")
+                            # FAIL THE ENTIRE REQUEST - hotspot/PPPoE won't work without RADIUS
+                            return {
+                                'success': False,
+                                'error': f"RADIUS registration failed: {radius_result.get('error')}. "
+                                        f"MikroTik configuration completed but will not work without RADIUS client registration.",
+                                'bridge_name': bridge_name,
+                                'pool_name': pool_name,
+                                'global_setup': global_setup_results,
+                                'results': interface_results
+                            }
+
+                        logger.info(f"Successfully registered MikroTik {identity} as RADIUS client")
+                        global_setup_results.append(f"Registered RADIUS client {identity}")
+
+                except Exception as radius_error:
+                    logger.error(f"CRITICAL: Exception during RADIUS registration: {str(radius_error)}", exc_info=True)
+                    # FAIL THE ENTIRE REQUEST
+                    return {
+                        'success': False,
+                        'error': f"RADIUS registration exception: {str(radius_error)}. "
+                                f"MikroTik configuration completed but will not work without RADIUS client registration.",
+                        'bridge_name': bridge_name,
+                        'pool_name': pool_name,
+                        'global_setup': global_setup_results,
+                        'results': interface_results
+                    }
+            else:
+                logger.warning("RADIUS parameters not provided - skipping RADIUS client registration")
+                global_setup_results.append("WARNING: RADIUS client not registered (missing parameters)")
 
             result = {
                 'success': True,

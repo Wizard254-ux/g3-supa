@@ -786,3 +786,110 @@ class RadiusManagementService:
                 'success': False,
                 'error': f'Failed to delete customer: {str(e)}'
             }
+
+    # ==================== MIKROTIK RADIUS CLIENT MANAGEMENT ====================
+
+    def register_mikrotik_radius_client(self, username: str, identity: str,
+                                       secret: str, ip_address: str) -> Dict[str, Any]:
+        """
+        Register a MikroTik device as a RADIUS client in FreeRADIUS
+
+        Args:
+            username: ISP owner username (e.g., "abutis")
+            identity: Unique device identifier (e.g., "abutis_Mikrotik2727")
+            secret: RADIUS shared secret for this device
+            ip_address: MikroTik device IP address
+
+        Returns:
+            Dict with success status
+        """
+        import subprocess
+        import os
+
+        logger.info("Registering MikroTik RADIUS client",
+                   username=username, identity=identity, ip_address=ip_address)
+
+        try:
+            clients_conf = '/etc/freeradius/3.0/clients.conf'
+
+            # Create client configuration block
+            client_config = f"""
+# MikroTik for {username} - {identity}
+client {identity} {{
+    ipaddr = {ip_address}
+    secret = {secret}
+    shortname = {identity}
+    nas_type = other
+}}
+"""
+
+            # Check if this client already exists
+            if os.path.exists(clients_conf):
+                with open(clients_conf, 'r') as f:
+                    content = f.read()
+                    if f'client {identity}' in content:
+                        logger.warning("Client already exists, updating...", identity=identity)
+                        # Remove old config
+                        lines = content.split('\n')
+                        new_lines = []
+                        skip = False
+                        for line in lines:
+                            if f'client {identity}' in line:
+                                skip = True
+                            elif skip and line.strip() == '}':
+                                skip = False
+                                continue
+                            if not skip:
+                                new_lines.append(line)
+                        content = '\n'.join(new_lines)
+
+                    # Append new config
+                    with open(clients_conf, 'w') as fw:
+                        fw.write(content)
+                        if not content.endswith('\n'):
+                            fw.write('\n')
+                        fw.write(client_config)
+            else:
+                # File doesn't exist, create it
+                with open(clients_conf, 'w') as f:
+                    f.write(client_config)
+
+            # Reload FreeRADIUS to apply changes
+            logger.info("Reloading FreeRADIUS service...")
+            result = subprocess.run(
+                ['systemctl', 'reload', 'freeradius'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode != 0:
+                logger.error("Failed to reload FreeRADIUS",
+                           stderr=result.stderr, stdout=result.stdout)
+                return {
+                    'success': False,
+                    'error': f'Failed to reload FreeRADIUS: {result.stderr}'
+                }
+
+            logger.info("MikroTik RADIUS client registered successfully")
+
+            return {
+                'success': True,
+                'message': f'MikroTik {identity} registered as RADIUS client',
+                'identity': identity,
+                'ip_address': ip_address
+            }
+
+        except PermissionError:
+            logger.error("Permission denied writing to FreeRADIUS config")
+            return {
+                'success': False,
+                'error': 'Permission denied. Ensure Flask app runs with appropriate privileges.'
+            }
+        except Exception as e:
+            logger.error("Failed to register MikroTik RADIUS client",
+                        error=str(e), exc_info=True)
+            return {
+                'success': False,
+                'error': f'Failed to register RADIUS client: {str(e)}'
+            }

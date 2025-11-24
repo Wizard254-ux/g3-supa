@@ -24,6 +24,20 @@ This document outlines the complete setup process for integrating FreeRADIUS wit
               │  - Sessions  │
               └──────────────┘
 ```
+# 🔒 Security Recommendations in prodution:
+
+  Change these in production:
+
+  1. RADIUS_SECRET - Make it STRONG:
+   Generate a strong secret                                                                                                                                                        
+  openssl rand -base64 32
+   Example output: xK8mP3vN2wQ9rL4sT7yU6zB5cD1eF0gH8iJ9kL2mN4o=                                                                                                                    
+  2. Update in TWO places:
+    - FreeRADIUS: /etc/freeradius/3.0/clients.conf                                                                                                                                  
+    - MikroTik: /radius configuration
+  3. RADIUS_DB_PASS - Use a complex password:
+   Example strong password                                                                                                                                                         
+  RADIUS_DB_PASS="aB3$mK9#pQ2@xY7!"  
 
 ### Flow:
 1. **User Management**: Your API → MySQL (add/remove users, assign packages)
@@ -39,13 +53,6 @@ This document outlines the complete setup process for integrating FreeRADIUS wit
 Run on your VPS:
 ```bash
 # Upload the script
-git pull origin master
-
-# Make executable
-chmod +x scripts/setup_radius.sh
-
-# Run with sudo
-sudo bash scripts/setup_radius.sh
 ```
 
 ### What the Script Does:

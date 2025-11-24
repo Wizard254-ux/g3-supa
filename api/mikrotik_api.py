@@ -1146,12 +1146,21 @@ def enable_anti_sharing():
 @api_endpoint(
     require_auth=True,
     require_json=True,
-    required_fields=['username', 'password', 'host', 'interfaces']
+    required_fields=['username', 'password', 'host', 'interfaces', 'radius_secret', 'device_name', 'isp_owner']
 )
 def configure_multiple_servers():
     """
     Configure multiple interfaces as PPPoE or Hotspot servers in a single request.
     Flexible endpoint that can handle mixed configurations on different ports.
+
+    Required fields:
+    - username: MikroTik admin username
+    - password: MikroTik admin password
+    - host: MikroTik IP address
+    - interfaces: Array of interface configurations
+    - radius_secret: The router's password (same as used for VPN and RADIUS)
+    - device_name: The router's identity (e.g., "abutis_Mikrotik1")
+    - isp_owner: The company slug (e.g., "abutis")
     """
     try:
         logger.info("=== Configure Multiple Servers Endpoint Called ===")
@@ -1162,8 +1171,12 @@ def configure_multiple_servers():
         host = data['host']
         port = data.get('port', 8728)
         interfaces_config = data['interfaces']
+        radius_secret = data['radius_secret']
+        device_name = data['device_name']
+        isp_owner = data['isp_owner']
 
         logger.info(f"Request parameters - Host: {host}, Port: {port}, User: {username}")
+        logger.info(f"Device: {device_name}, ISP Owner: {isp_owner}")
         logger.info(f"Number of interfaces to configure: {len(interfaces_config) if isinstance(interfaces_config, list) else 'NOT A LIST'}")
         logger.info(f"Interfaces config received: {interfaces_config}")
 
@@ -1216,7 +1229,10 @@ def configure_multiple_servers():
         logger.info("MikroTikService instance created, calling configure_multiple_servers_dynamic...")
 
         result = mikrotik_service.configure_multiple_servers_dynamic(
-            username, password, host, port, interfaces_config
+            username, password, host, port, interfaces_config,
+            radius_secret=radius_secret,
+            device_name=device_name,
+            isp_owner=isp_owner
         )
 
         logger.info(f"Service method returned. Success: {result.get('success')}")
