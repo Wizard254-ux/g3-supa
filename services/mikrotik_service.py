@@ -1768,12 +1768,13 @@ class MikroTikService:
                                 profile_id = profile_to_update[0]['.id']
                                 try:
                                     logger.info(f"Attempting to update profile {profile_name} with ID: {profile_id}")
-                                    hotspot_profile.update(**{
+                                    # Use RouterOS API set command directly
+                                    api(cmd='/ip/hotspot/profile/set', **{
                                         '.id': profile_id,
                                         'use-radius': 'yes',
                                         'html-directory': html_directory
                                     })
-                                    logger.info(f"Update command executed successfully")
+                                    logger.info(f"Set command executed successfully")
                                     setup_steps.append(f"Hotspot profile {profile_name} exists, updated RADIUS and html-directory")
                                     logger.info(f"Updated hotspot profile {profile_name}: use-radius=yes, html-directory={html_directory}")
                                 except Exception as update_error:
