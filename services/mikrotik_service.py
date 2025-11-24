@@ -1747,42 +1747,39 @@ class MikroTikService:
 
                         html_directory = self.app.config.get('ISP_HOTSPOT_HTML_DIR', 'lomtech-hotspot')
 
-                        if profile_name not in profile_names_list:
-                            logger.info(f"Creating hotspot profile {profile_name}...")
-                            profile_config = {
-                                'name': profile_name,
-                                'hotspot-address': '172.31.0.1',
-                                'dns-name': 'router.local',
-                                'html-directory': html_directory,
-                                'login-by': 'http-chap,http-pap',
-                                'use-radius': 'yes'
-                            }
-                            hotspot_profile.add(**profile_config)
-                            setup_steps.append(f"Created hotspot profile {profile_name} with RADIUS enabled")
-                            logger.info(f"Hotspot profile {profile_name} created with use-radius=yes and html-directory={html_directory}")
+                        # Check if profile exists and needs to be recreated
+                        profile_exists = profile_name in profile_names_list
+
+                        if profile_exists:
+                            # Profile exists - delete and recreate with correct settings
+                            logger.info(f"Hotspot profile {profile_name} exists, recreating with correct settings...")
+                            try:
+                                profile_to_delete = list(hotspot_profile.select('.id', 'name').where('name', profile_name))
+                                if profile_to_delete:
+                                    profile_id = profile_to_delete[0]['.id']
+                                    hotspot_profile.remove(profile_id)
+                                    logger.info(f"Deleted old profile {profile_name}")
+                            except Exception as delete_error:
+                                logger.error(f"Failed to delete old profile: {str(delete_error)}", exc_info=True)
+
+                        # Create profile with correct settings
+                        logger.info(f"Creating hotspot profile {profile_name}...")
+                        profile_config = {
+                            'name': profile_name,
+                            'hotspot-address': '172.31.0.1',
+                            'dns-name': 'router.local',
+                            'html-directory': html_directory,
+                            'login-by': 'http-chap,http-pap',
+                            'use-radius': 'yes'
+                        }
+                        hotspot_profile.add(**profile_config)
+
+                        if profile_exists:
+                            setup_steps.append(f"Recreated hotspot profile {profile_name} with RADIUS enabled")
                         else:
-                            # Profile exists, ensure RADIUS and html-directory are set
-                            logger.info(f"Hotspot profile {profile_name} exists, updating settings...")
-                            profile_to_update = list(hotspot_profile.select('.id', 'name').where('name', profile_name))
-                            if profile_to_update:
-                                profile_id = profile_to_update[0]['.id']
-                                try:
-                                    logger.info(f"Attempting to update profile {profile_name} with ID: {profile_id}")
-                                    # Use RouterOS API set command directly
-                                    api(cmd='/ip/hotspot/profile/set', **{
-                                        '.id': profile_id,
-                                        'use-radius': 'yes',
-                                        'html-directory': html_directory
-                                    })
-                                    logger.info(f"Set command executed successfully")
-                                    setup_steps.append(f"Hotspot profile {profile_name} exists, updated RADIUS and html-directory")
-                                    logger.info(f"Updated hotspot profile {profile_name}: use-radius=yes, html-directory={html_directory}")
-                                except Exception as update_error:
-                                    logger.error(f"Failed to update hotspot profile: {str(update_error)}", exc_info=True)
-                                    setup_steps.append(f"Hotspot profile {profile_name} exists (update failed: {str(update_error)})")
-                            else:
-                                logger.warning(f"Could not find profile {profile_name} to update")
-                                setup_steps.append(f"Hotspot profile {profile_name} exists")
+                            setup_steps.append(f"Created hotspot profile {profile_name} with RADIUS enabled")
+
+                        logger.info(f"Hotspot profile {profile_name} ready: use-radius=yes, html-directory={html_directory}")
 
                         # Configure hotspot server
                         logger.info("Configuring hotspot server...")
