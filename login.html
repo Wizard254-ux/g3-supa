@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Redirect to Packages</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+            Oxygen, Ubuntu, sans-serif;
+            color: #444;
+        }
+
+        .container {
+            text-align: center;
+            padding: 2rem;
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem; /* Consistent spacing between elements */
+        }
+
+        .redirect-text {
+            color: #555;
+            font-size: 1.4em;
+            margin: 0;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        .manual-text {
+            color: #777;
+            font-size: 1.1em;
+            margin: 0;
+            padding: 0 20px;
+            opacity: 0;
+            display: none;
+            animation: fadeIn 0.8s ease forwards;
+        }
+
+        .redirect-form {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            margin-top: 5px; /* Reduced space above button */
+        }
+
+        .redirect-form button {
+            background: #4a90e2;
+            border: none;
+            padding: 0.8rem 1.8rem;
+            border-radius: 25px;
+            font-size: 1.1em;
+            width: 200px;
+            height: 50px;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(74, 144, 226, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            display: none;
+            opacity: 0;
+            transform: translateY(10px);
+            animation: fadeInButton 0.5s ease forwards;
+        }
+
+        .redirect-form button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(74, 144, 226, 0.25);
+            background: #357abd;
+        }
+
+        .redirect-form button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(74, 144, 226, 0.2);
+        }
+
+        .loader-container {
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4a90e2;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        .progress-bar {
+            width: 200px;
+            height: 4px;
+            background: #eee;
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            width: 0%;
+            height: 100%;
+            background: #4a90e2;
+            animation: fillProgress 3s linear forwards;
+        }
+
+        @keyframes fillProgress {
+            to {
+                width: 100%;
+            }
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInButton {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .manual-redirect {
+            margin-top: 10px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px; /* Space between text and button */
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="loader-container">
+        <div class="loader"></div>
+    </div>
+    <div class="redirect-text">Loading packages...</div>
+    <div class="progress-bar">
+        <div class="progress-fill"></div>
+    </div>
+    <div class="manual-redirect">
+        <form
+                action="http://192.168.88.254:8000/hotspot/packages"
+                method="post"
+                name="redirect"
+                class="redirect-form"
+        >
+            <input name="ip" type="hidden" value="$(ip)"/>
+            <input name="router" type="hidden" value="11859"/>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const form = document.querySelector("form");
+        const button = document.querySelector("button");
+        const manualText = document.querySelector(".manual-text");
+
+        // Show the button and text after a delay
+        setTimeout(() => {
+            button.style.display = "block";
+            manualText.style.display = "block";
+        }, 3000);
+
+        // Attempt automatic redirect
+        setTimeout(() => {
+            form.submit();
+        }, 300); // Slightly delayed to allow animations to complete
+
+        // Add click animation to button
+        button.addEventListener("mousedown", function () {
+            this.style.transform = "scale(0.98)";
+        });
+
+        button.addEventListener("mouseup", function () {
+            this.style.transform = "scale(1)";
+        });
+    });
+</script>
+</body>
+</html>
