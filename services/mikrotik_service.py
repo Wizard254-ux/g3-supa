@@ -1333,8 +1333,38 @@ class MikroTikService:
                 setup_results.append(f"Hotspot profile {profile_name} exists")
                 logger.info("Hotspot profile already exists")
 
-            # 7. Configure hotspot server on bridge
-            logger.info("Step 7: Configuring hotspot server...")
+            # 7. Configure DHCP server for the bridge
+            logger.info("Step 7: Configuring DHCP server...")
+            dhcp_server = api.path('/ip/dhcp-server')
+            dhcp_name = f'{isp_brand}-dhcp'
+            
+            all_dhcp = list(dhcp_server.select('name'))
+            dhcp_names = [d.get('name', '') for d in all_dhcp]
+            
+            if dhcp_name not in dhcp_names:
+                logger.info(f"Creating DHCP server {dhcp_name}...")
+                dhcp_server.add(
+                    name=dhcp_name,
+                    interface=bridge_name,
+                    **{'address-pool': pool_name},
+                    **{'lease-time': '1h'}
+                )
+                
+                # Add DHCP network
+                dhcp_network = api.path('/ip/dhcp-server/network')
+                dhcp_network.add(
+                    address='172.31.0.0/16',
+                    gateway='172.31.0.1',
+                    **{'dns-server': '172.31.0.1'}
+                )
+                setup_results.append(f"Created DHCP server {dhcp_name}")
+                logger.info("DHCP server created")
+            else:
+                setup_results.append(f"DHCP server {dhcp_name} exists")
+                logger.info("DHCP server already exists")
+
+            # 8. Configure hotspot server on bridge
+            logger.info("Step 8: Configuring hotspot server...")
             hotspot = api.path('/ip/hotspot')
 
             logger.info(f"Checking if hotspot {hotspot_name} exists...")
@@ -1747,45 +1777,91 @@ class MikroTikService:
 
                         html_directory = self.app.config.get('ISP_HOTSPOT_HTML_DIR', 'lomtech-hotspot')
 
-                        # Check if profile exists and needs to be recreated
+                        # Check if profile exists and if settings are correct
                         profile_exists = profile_name in profile_names_list
+                        needs_recreate = False
 
                         if profile_exists:
-                            # Profile exists - delete and recreate with correct settings
-                            logger.info(f"Hotspot profile {profile_name} exists, recreating with correct settings...")
-                            try:
-                                # Get all profiles and filter manually (where() clause doesn't work reliably)
-                                all_profile_details = list(hotspot_profile.select('.id', 'name'))
-                                matching_profiles = [p for p in all_profile_details if p.get('name') == profile_name]
+                            # Get current profile settings
+                            logger.info(f"Hotspot profile {profile_name} exists, checking settings...")
+                            all_profile_details = list(hotspot_profile.select('.id', 'name', 'use-radius', 'html-directory'))
+                            matching_profiles = [p for p in all_profile_details if p.get('name') == profile_name]
 
-                                if matching_profiles:
-                                    profile_id = matching_profiles[0]['.id']
-                                    logger.info(f"Found profile to delete: {profile_name} with ID: {profile_id}")
-                                    hotspot_profile.remove(profile_id)
-                                    logger.info(f"Deleted old profile {profile_name}")
+                            if matching_profiles:
+                                current_profile = matching_profiles[0]
+                                current_use_radius = current_profile.get('use-radius', 'no')
+                                current_html_dir = current_profile.get('html-directory', 'hotspot')
+
+                                # Check if settings are incorrect
+                                if current_use_radius != 'yes' or current_html_dir != html_directory:
+                                    needs_recreate = True
+                                    logger.info(f"Profile {profile_name} has incorrect settings:")
+                                    logger.info(f"  use-radius: {current_use_radius} (should be yes)")
+                                    logger.info(f"  html-directory: {current_html_dir} (should be {html_directory})")
                                 else:
-                                    logger.warning(f"Profile {profile_name} not found in profile list")
+                                    logger.info(f"Profile {profile_name} already has correct settings, skipping")
+                                    setup_steps.append(f"Hotspot profile {profile_name} already configured correctly")
+
+                        # Delete and recreate if needed
+                        if needs_recreate:
+                            logger.info(f"Recreating profile {profile_name} with correct settings...")
+                            try:
+                                profile_id = matching_profiles[0]['.id']
+                                logger.info(f"Deleting profile {profile_name} with ID: {profile_id}")
+                                hotspot_profile.remove(profile_id)
+                                logger.info(f"Deleted old profile {profile_name}")
                             except Exception as delete_error:
                                 logger.error(f"Failed to delete old profile: {str(delete_error)}", exc_info=True)
 
-                        # Create profile with correct settings
-                        logger.info(f"Creating hotspot profile {profile_name}...")
-                        profile_config = {
-                            'name': profile_name,
-                            'hotspot-address': '172.31.0.1',
-                            'dns-name': 'router.local',
-                            'html-directory': html_directory,
-                            'login-by': 'http-chap,http-pap',
-                            'use-radius': 'yes'
-                        }
-                        hotspot_profile.add(**profile_config)
+                        # Create profile if it doesn't exist or was just deleted
+                        if not profile_exists or needs_recreate:
+                            logger.info(f"Creating hotspot profile {profile_name}...")
+                            profile_config = {
+                                'name': profile_name,
+                                'hotspot-address': '172.31.0.1',
+                                'dns-name': 'router.local',
+                                'html-directory': html_directory,
+                                'login-by': 'http-chap,http-pap',
+                                'use-radius': 'yes'
+                            }
+                            hotspot_profile.add(**profile_config)
 
-                        if profile_exists:
-                            setup_steps.append(f"Recreated hotspot profile {profile_name} with RADIUS enabled")
+                            if needs_recreate:
+                                setup_steps.append(f"Recreated hotspot profile {profile_name} with correct settings")
+                            else:
+                                setup_steps.append(f"Created hotspot profile {profile_name} with RADIUS enabled")
+
+                            logger.info(f"Hotspot profile {profile_name} ready: use-radius=yes, html-directory={html_directory}")
+
+                        # Configure DHCP server for the bridge (if not exists)
+                        logger.info("Ensuring DHCP server exists...")
+                        dhcp_server = api.path('/ip/dhcp-server')
+                        dhcp_name = f'{isp_brand}-dhcp'
+                        
+                        all_dhcp = list(dhcp_server.select('name'))
+                        dhcp_names = [d.get('name', '') for d in all_dhcp]
+                        
+                        if dhcp_name not in dhcp_names:
+                            logger.info(f"Creating DHCP server {dhcp_name}...")
+                            dhcp_server.add(
+                                name=dhcp_name,
+                                interface=bridge_name,
+                                **{'address-pool': pool_name},
+                                **{'lease-time': '1h'}
+                            )
+                            
+                            # Add DHCP network
+                            dhcp_network = api.path('/ip/dhcp-server/network')
+                            dhcp_network.add(
+                                address='172.31.0.0/16',
+                                gateway='172.31.0.1',
+                                **{'dns-server': '172.31.0.1'}
+                            )
+                            setup_steps.append(f"Created DHCP server {dhcp_name}")
+                            logger.info("DHCP server created")
                         else:
-                            setup_steps.append(f"Created hotspot profile {profile_name} with RADIUS enabled")
-
-                        logger.info(f"Hotspot profile {profile_name} ready: use-radius=yes, html-directory={html_directory}")
+                            setup_steps.append(f"DHCP server {dhcp_name} exists")
+                            logger.info("DHCP server already exists")
 
                         # Configure hotspot server
                         logger.info("Configuring hotspot server...")
