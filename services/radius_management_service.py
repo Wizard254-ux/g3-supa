@@ -787,6 +787,102 @@ class RadiusManagementService:
                 'error': f'Failed to delete customer: {str(e)}'
             }
 
+    # ==================== HOTSPOT USER AUTHORIZATION ====================
+
+    def authorize_hotspot_user(self, mac_address: str, download_speed: int,
+                              upload_speed: int, data_limit: int = None,
+                              time_limit: int = None, expires_at: str = None,
+                              company_slug: str = None) -> Dict[str, Any]:
+        """
+        Authorize hotspot user MAC address in RADIUS
+
+        Args:
+            mac_address: MAC address (e.g., "AA:BB:CC:DD:EE:FF")
+            download_speed: Download speed in bytes/sec
+            upload_speed: Upload speed in bytes/sec
+            data_limit: Data limit in bytes (optional)
+            time_limit: Time limit in seconds (optional)
+            expires_at: Expiry datetime (optional)
+            company_slug: Company identifier for multi-tenancy
+
+        Returns:
+            Dict with success status
+        """
+        logger.info("Authorizing hotspot user", mac_address=mac_address, company_slug=company_slug)
+
+        try:
+            with self.get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # Convert speeds to Mikrotik format (bits/sec with M/K suffix)
+                    download_mbps = download_speed / 1048576  # bytes to Mbps
+                    upload_mbps = upload_speed / 1048576
+                    rate_limit = f"{int(upload_mbps)}M/{int(download_mbps)}M"
+
+                    # Check if MAC already exists
+                    cursor.execute("""
+                        SELECT id FROM radcheck
+                        WHERE username = %s
+                    """, (mac_address,))
+
+                    if cursor.fetchone():
+                        # Update existing
+                        cursor.execute("""
+                            UPDATE radcheck
+                            SET status = 'active', username_owner = %s
+                            WHERE username = %s
+                        """, (company_slug, mac_address))
+
+                        # Update rate limit
+                        cursor.execute("""
+                            UPDATE radreply
+                            SET value = %s
+                            WHERE username = %s AND attribute = 'Mikrotik-Rate-Limit'
+                        """, (rate_limit, mac_address))
+
+                        if cursor.rowcount == 0:
+                            cursor.execute("""
+                                INSERT INTO radreply (username, attribute, op, value)
+                                VALUES (%s, 'Mikrotik-Rate-Limit', ':=', %s)
+                            """, (mac_address, rate_limit))
+                    else:
+                        # Create new hotspot user
+                        cursor.execute("""
+                            INSERT INTO radcheck (username, attribute, op, value, username_owner, status)
+                            VALUES (%s, 'Auth-Type', ':=', 'Accept', %s, 'active')
+                        """, (mac_address, company_slug))
+
+                        # Add rate limit
+                        cursor.execute("""
+                            INSERT INTO radreply (username, attribute, op, value)
+                            VALUES (%s, 'Mikrotik-Rate-Limit', ':=', %s)
+                        """, (mac_address, rate_limit))
+
+                    # Add time limit if provided
+                    if time_limit:
+                        cursor.execute("""
+                            INSERT INTO radreply (username, attribute, op, value)
+                            VALUES (%s, 'Session-Timeout', ':=', %s)
+                            ON DUPLICATE KEY UPDATE value = %s
+                        """, (mac_address, str(time_limit), str(time_limit)))
+
+                    conn.commit()
+
+                    logger.info("Hotspot user authorized", mac_address=mac_address, rate_limit=rate_limit)
+
+                    return {
+                        'success': True,
+                        'message': 'Hotspot user authorized',
+                        'mac_address': mac_address,
+                        'rate_limit': rate_limit
+                    }
+
+        except Exception as e:
+            logger.error("Failed to authorize hotspot user", error=str(e), exc_info=True)
+            return {
+                'success': False,
+                'error': f'Failed to authorize hotspot user: {str(e)}'
+            }
+
     # ==================== MIKROTIK RADIUS CLIENT MANAGEMENT ====================
 
     def register_mikrotik_radius_client(self, username: str, identity: str,

@@ -648,6 +648,72 @@ def delete_customer(customer_username):
         }), 500
 
 
+# ==================== HOTSPOT AUTHORIZATION ENDPOINT ====================
+
+@radius_mgmt_bp.route('/hotspot/authorize', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['mac_address', 'download_speed', 'upload_speed', 'company_slug']
+)
+def authorize_hotspot():
+    """
+    Authorize hotspot user MAC address in RADIUS
+
+    Request:
+    {
+        "mac_address": "AA:BB:CC:DD:EE:FF",
+        "download_speed": 10485760,
+        "upload_speed": 5242880,
+        "data_limit": 1073741824,
+        "time_limit": 3600,
+        "expires_at": "2025-01-20T10:00:00Z",
+        "company_slug": "abutis"
+    }
+
+    Response:
+    {
+        "success": true,
+        "message": "Hotspot user authorized",
+        "mac_address": "AA:BB:CC:DD:EE:FF",
+        "rate_limit": "5M/10M"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        mac_address = data['mac_address']
+        download_speed = data['download_speed']
+        upload_speed = data['upload_speed']
+        data_limit = data.get('data_limit')
+        time_limit = data.get('time_limit')
+        expires_at = data.get('expires_at')
+        company_slug = data['company_slug']
+
+        logger.info("Authorize hotspot request", mac_address=mac_address, company_slug=company_slug)
+
+        service = RadiusManagementService(current_app)
+        result = service.authorize_hotspot_user(
+            mac_address=mac_address,
+            download_speed=download_speed,
+            upload_speed=upload_speed,
+            data_limit=data_limit,
+            time_limit=time_limit,
+            expires_at=expires_at,
+            company_slug=company_slug
+        )
+
+        status_code = 200 if result['success'] else 400
+        return jsonify(result), status_code
+
+    except Exception as e:
+        logger.error("Authorize hotspot failed", error=str(e), exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
 # ==================== MIKROTIK RADIUS CLIENT ENDPOINTS ====================
 
 @radius_mgmt_bp.route('/register-mikrotik', methods=['POST'])

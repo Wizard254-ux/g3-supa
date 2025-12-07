@@ -1875,10 +1875,11 @@ class MikroTikService:
                                 logger.info(f"Hotspot {hotspot_name} exists, updating...")
                                 hotspot_id = existing_hotspot[0]['.id']
 
-                                # Update interface and disabled status
+                                # Update interface, profile, and disabled status
                                 update_config = {
                                     '.id': hotspot_id,
-                                    'interface': bridge_name
+                                    'interface': bridge_name,
+                                    'profile': profile_name
                                 }
 
                                 # Handle auto_enable for existing hotspots
