@@ -38,11 +38,29 @@ class RadiusManagementService:
     @contextmanager
     def get_db_connection(self):
         """Context manager for database connections"""
-        connection = pymysql.connect(**self.radius_db_config)
+        logger.info("[DB_CONNECTION] Attempting to connect to RADIUS database", 
+                   host=self.radius_db_config.get('host'),
+                   port=self.radius_db_config.get('port'),
+                   database=self.radius_db_config.get('database'))
         try:
-            yield connection
-        finally:
-            connection.close()
+            connection = pymysql.connect(**self.radius_db_config)
+            logger.info("[DB_CONNECTION] Successfully connected to RADIUS database")
+            try:
+                yield connection
+            finally:
+                logger.info("[DB_CONNECTION] Closing database connection")
+                connection.close()
+        except Exception as e:
+            logger.error("[DB_CONNECTION] Failed to connect to RADIUS database", 
+                        error=str(e),
+                        config={
+                            'host': self.radius_db_config.get('host'),
+                            'port': self.radius_db_config.get('port'),
+                            'database': self.radius_db_config.get('database'),
+                            'user': self.radius_db_config.get('user')
+                        },
+                        exc_info=True)
+            raise
 
     # ==================== PACKAGE MANAGEMENT ====================
 
@@ -808,66 +826,101 @@ class RadiusManagementService:
         Returns:
             Dict with success status
         """
-        logger.info("Authorizing hotspot user", mac_address=mac_address, company_slug=company_slug)
+        logger.info("[RADIUS_SERVICE] Starting hotspot user authorization", 
+                   mac_address=mac_address, 
+                   company_slug=company_slug,
+                   download_speed=download_speed,
+                   upload_speed=upload_speed)
 
         try:
+            logger.info("[RADIUS_SERVICE] Getting database connection...")
             with self.get_db_connection() as conn:
+                logger.info("[RADIUS_SERVICE] Database connection established")
                 with conn.cursor() as cursor:
+                    logger.info("[RADIUS_SERVICE] Database cursor created")
+                    
                     # Convert speeds to Mikrotik format (bits/sec with M/K suffix)
                     download_mbps = download_speed / 1048576  # bytes to Mbps
                     upload_mbps = upload_speed / 1048576
                     rate_limit = f"{int(upload_mbps)}M/{int(download_mbps)}M"
+                    
+                    logger.info("[RADIUS_SERVICE] Calculated rate limit", 
+                               download_mbps=download_mbps,
+                               upload_mbps=upload_mbps,
+                               rate_limit=rate_limit)
 
                     # Check if MAC already exists
+                    logger.info("[RADIUS_SERVICE] Checking if MAC address exists in radcheck...")
                     cursor.execute("""
                         SELECT id FROM radcheck
                         WHERE username = %s
                     """, (mac_address,))
 
-                    if cursor.fetchone():
+                    existing_user = cursor.fetchone()
+                    logger.info("[RADIUS_SERVICE] MAC address check result", exists=bool(existing_user))
+
+                    if existing_user:
+                        logger.info("[RADIUS_SERVICE] Updating existing user...")
                         # Update existing
                         cursor.execute("""
                             UPDATE radcheck
                             SET status = 'active', username_owner = %s
                             WHERE username = %s
                         """, (company_slug, mac_address))
+                        logger.info("[RADIUS_SERVICE] Updated radcheck table", rows_affected=cursor.rowcount)
 
                         # Update rate limit
+                        logger.info("[RADIUS_SERVICE] Updating rate limit in radreply...")
                         cursor.execute("""
                             UPDATE radreply
                             SET value = %s
                             WHERE username = %s AND attribute = 'Mikrotik-Rate-Limit'
                         """, (rate_limit, mac_address))
+                        
+                        update_rows = cursor.rowcount
+                        logger.info("[RADIUS_SERVICE] Rate limit update result", rows_affected=update_rows)
 
-                        if cursor.rowcount == 0:
+                        if update_rows == 0:
+                            logger.info("[RADIUS_SERVICE] No existing rate limit found, inserting new one...")
                             cursor.execute("""
                                 INSERT INTO radreply (username, attribute, op, value)
                                 VALUES (%s, 'Mikrotik-Rate-Limit', ':=', %s)
                             """, (mac_address, rate_limit))
+                            logger.info("[RADIUS_SERVICE] Inserted new rate limit")
                     else:
+                        logger.info("[RADIUS_SERVICE] Creating new hotspot user...")
                         # Create new hotspot user
                         cursor.execute("""
                             INSERT INTO radcheck (username, attribute, op, value, username_owner, status)
                             VALUES (%s, 'Auth-Type', ':=', 'Accept', %s, 'active')
                         """, (mac_address, company_slug))
+                        logger.info("[RADIUS_SERVICE] Inserted into radcheck table")
 
                         # Add rate limit
+                        logger.info("[RADIUS_SERVICE] Adding rate limit to radreply...")
                         cursor.execute("""
                             INSERT INTO radreply (username, attribute, op, value)
                             VALUES (%s, 'Mikrotik-Rate-Limit', ':=', %s)
                         """, (mac_address, rate_limit))
+                        logger.info("[RADIUS_SERVICE] Inserted rate limit into radreply")
 
                     # Add time limit if provided
                     if time_limit:
+                        logger.info("[RADIUS_SERVICE] Adding session timeout", time_limit=time_limit)
                         cursor.execute("""
                             INSERT INTO radreply (username, attribute, op, value)
                             VALUES (%s, 'Session-Timeout', ':=', %s)
                             ON DUPLICATE KEY UPDATE value = %s
                         """, (mac_address, str(time_limit), str(time_limit)))
+                        logger.info("[RADIUS_SERVICE] Session timeout added")
 
+                    logger.info("[RADIUS_SERVICE] Committing database transaction...")
                     conn.commit()
+                    logger.info("[RADIUS_SERVICE] Database transaction committed successfully")
 
-                    logger.info("Hotspot user authorized", mac_address=mac_address, rate_limit=rate_limit)
+                    logger.info("[RADIUS_SERVICE] Hotspot user authorized successfully", 
+                               mac_address=mac_address, 
+                               rate_limit=rate_limit)
 
                     return {
                         'success': True,
@@ -877,7 +930,11 @@ class RadiusManagementService:
                     }
 
         except Exception as e:
-            logger.error("Failed to authorize hotspot user", error=str(e), exc_info=True)
+            logger.error("[RADIUS_SERVICE] Failed to authorize hotspot user", 
+                        error=str(e), 
+                        mac_address=mac_address,
+                        company_slug=company_slug,
+                        exc_info=True)
             return {
                 'success': False,
                 'error': f'Failed to authorize hotspot user: {str(e)}'

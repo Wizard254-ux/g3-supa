@@ -679,8 +679,16 @@ def authorize_hotspot():
         "rate_limit": "5M/10M"
     }
     """
+    logger.info("[HOTSPOT_AUTH] Endpoint called", 
+                method=request.method, 
+                endpoint='/hotspot/authorize',
+                remote_addr=request.remote_addr,
+                user_agent=request.headers.get('User-Agent'))
+    
     try:
+        logger.info("[HOTSPOT_AUTH] Getting request data...")
         data = request.get_json()
+        logger.info("[HOTSPOT_AUTH] Request data received", data=data)
         
         mac_address = data['mac_address']
         download_speed = data['download_speed']
@@ -690,9 +698,18 @@ def authorize_hotspot():
         expires_at = data.get('expires_at')
         company_slug = data['company_slug']
 
-        logger.info("Authorize hotspot request", mac_address=mac_address, company_slug=company_slug)
+        logger.info("[HOTSPOT_AUTH] Parsed request parameters", 
+                   mac_address=mac_address, 
+                   company_slug=company_slug,
+                   download_speed=download_speed,
+                   upload_speed=upload_speed,
+                   data_limit=data_limit,
+                   time_limit=time_limit)
 
+        logger.info("[HOTSPOT_AUTH] Initializing RadiusManagementService...")
         service = RadiusManagementService(current_app)
+        
+        logger.info("[HOTSPOT_AUTH] Calling authorize_hotspot_user...")
         result = service.authorize_hotspot_user(
             mac_address=mac_address,
             download_speed=download_speed,
@@ -702,12 +719,15 @@ def authorize_hotspot():
             expires_at=expires_at,
             company_slug=company_slug
         )
+        
+        logger.info("[HOTSPOT_AUTH] Service result", result=result)
 
         status_code = 200 if result['success'] else 400
+        logger.info("[HOTSPOT_AUTH] Returning response", status_code=status_code)
         return jsonify(result), status_code
 
     except Exception as e:
-        logger.error("Authorize hotspot failed", error=str(e), exc_info=True)
+        logger.error("[HOTSPOT_AUTH] Exception occurred", error=str(e), exc_info=True)
         return jsonify({
             'success': False,
             'error': f'Internal server error: {str(e)}'
