@@ -1857,6 +1857,9 @@ EOSQL
 -- Drop existing event if it exists
 DROP EVENT IF EXISTS cleanup_expired_hotspot_sessions;
 
+-- Change delimiter to handle BEGIN...END block
+DELIMITER $$
+
 -- Create event to run every hour
 CREATE EVENT cleanup_expired_hotspot_sessions
 ON SCHEDULE EVERY 1 HOUR
@@ -1874,7 +1877,10 @@ BEGIN
     DELETE rr FROM radreply rr
     LEFT JOIN radcheck rc ON rr.username = rc.username
     WHERE rc.id IS NULL;
-END;
+END$$
+
+-- Reset delimiter back to semicolon
+DELIMITER ;
 EOSQL
 
     # Make event scheduler persistent across MySQL restarts
