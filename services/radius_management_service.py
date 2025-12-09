@@ -820,17 +820,18 @@ class RadiusManagementService:
             upload_speed: Upload speed in bytes/sec
             data_limit: Data limit in bytes (optional)
             time_limit: Time limit in seconds (optional)
-            expires_at: Expiry datetime (optional)
+            expires_at: Expiry datetime ISO string (optional)
             company_slug: Company identifier for multi-tenancy
 
         Returns:
             Dict with success status
         """
-        logger.info("[RADIUS_SERVICE] Starting hotspot user authorization", 
-                   mac_address=mac_address, 
+        logger.info("[RADIUS_SERVICE] Starting hotspot user authorization",
+                   mac_address=mac_address,
                    company_slug=company_slug,
                    download_speed=download_speed,
-                   upload_speed=upload_speed)
+                   upload_speed=upload_speed,
+                   expires_at=expires_at)
 
         try:
             logger.info("[RADIUS_SERVICE] Getting database connection...")
@@ -839,10 +840,15 @@ class RadiusManagementService:
                 with conn.cursor() as cursor:
                     logger.info("[RADIUS_SERVICE] Database cursor created")
                     
-                    # Convert speeds to Mikrotik format (bits/sec with M/K suffix)
-                    download_mbps = download_speed / 1048576  # bytes to Mbps
-                    upload_mbps = upload_speed / 1048576
-                    rate_limit = f"{int(upload_mbps)}M/{int(download_mbps)}M"
+                    # Convert speeds to Mikrotik format (bytes/sec to Mbps)
+                    download_mbps = download_speed / (1024 * 1024)  # bytes/sec to MB/sec
+                    upload_mbps = upload_speed / (1024 * 1024)     # bytes/sec to MB/sec
+                    
+                    # Ensure minimum 1M if speed is very low
+                    download_mbps = max(1, int(download_mbps))
+                    upload_mbps = max(1, int(upload_mbps))
+                    
+                    rate_limit = f"{upload_mbps}M/{download_mbps}M"
                     
                     logger.info("[RADIUS_SERVICE] Calculated rate limit", 
                                download_mbps=download_mbps,
@@ -904,7 +910,7 @@ class RadiusManagementService:
                         """, (mac_address, rate_limit))
                         logger.info("[RADIUS_SERVICE] Inserted rate limit into radreply")
 
-                    # Add time limit if provided
+                    # Add Session-Timeout (static value - FreeRADIUS will calculate dynamic value from expires_at)
                     if time_limit:
                         logger.info("[RADIUS_SERVICE] Adding session timeout", time_limit=time_limit)
                         cursor.execute("""
@@ -913,6 +919,16 @@ class RadiusManagementService:
                             ON DUPLICATE KEY UPDATE value = %s
                         """, (mac_address, str(time_limit), str(time_limit)))
                         logger.info("[RADIUS_SERVICE] Session timeout added")
+
+                    # Store expires_at timestamp - FreeRADIUS will use this to calculate dynamic timeout
+                    if expires_at:
+                        logger.info("[RADIUS_SERVICE] Storing expiry timestamp in radcheck")
+                        cursor.execute("""
+                            UPDATE radcheck
+                            SET expires_at = %s
+                            WHERE username = %s
+                        """, (expires_at, mac_address))
+                        logger.info("[RADIUS_SERVICE] Expiry timestamp stored - FreeRADIUS will calculate remaining time")
 
                     logger.info("[RADIUS_SERVICE] Committing database transaction...")
                     conn.commit()

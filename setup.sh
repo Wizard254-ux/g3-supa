@@ -1202,6 +1202,8 @@ setup_firewall() {
         ufw allow 443/tcp
         ufw allow from 10.0.0.0/8 to any port 5000  # Internal Flask access
         ufw allow from 192.168.0.0/16 to any port 5000
+        ufw allow from 10.8.0.0/24 to any port 1812 proto udp  # RADIUS authentication
+        ufw allow from 10.8.0.0/24 to any port 1813 proto udp  # RADIUS accounting
 
     elif command -v firewall-cmd &> /dev/null; then
         # CentOS/RHEL firewalld
@@ -1210,6 +1212,8 @@ setup_firewall() {
         firewall-cmd --permanent --add-service=http
         firewall-cmd --permanent --add-service=https
         firewall-cmd --permanent --add-service=ssh
+        firewall-cmd --permanent --add-port=1812/udp  # RADIUS authentication
+        firewall-cmd --permanent --add-port=1813/udp  # RADIUS accounting
         firewall-cmd --reload
     fi
 
@@ -1836,9 +1840,52 @@ EOSQL
     mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN package_id INT COMMENT 'FK to packages.id';" 2>/dev/null || true
     mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN status ENUM('active', 'suspended', 'expired') DEFAULT 'active';" 2>/dev/null || true
     mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD COLUMN expires_at DATETIME NULL COMMENT 'Package expiry timestamp for dynamic timeout calculation';" 2>/dev/null || true
     mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD INDEX idx_username_owner (username_owner);" 2>/dev/null || true
     mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD INDEX idx_package_id (package_id);" 2>/dev/null || true
     mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD INDEX idx_status (status);" 2>/dev/null || true
+    mysql ${RADIUS_DB_NAME} -e "ALTER TABLE radcheck ADD INDEX idx_expires_at (expires_at);" 2>/dev/null || true
+
+    # Set up automatic cleanup of expired sessions
+    print_status "Configuring automatic cleanup of expired hotspot sessions..."
+
+    # Enable MySQL Event Scheduler
+    mysql -e "SET GLOBAL event_scheduler = ON;" 2>/dev/null || true
+
+    # Create event to delete expired sessions every hour
+    mysql ${RADIUS_DB_NAME} << 'EOSQL'
+-- Drop existing event if it exists
+DROP EVENT IF EXISTS cleanup_expired_hotspot_sessions;
+
+-- Create event to run every hour
+CREATE EVENT cleanup_expired_hotspot_sessions
+ON SCHEDULE EVERY 1 HOUR
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    -- Delete expired hotspot sessions from radcheck (MAC addresses with Auth-Type = Accept)
+    DELETE FROM radcheck
+    WHERE attribute = 'Auth-Type'
+    AND value = 'Accept'
+    AND expires_at IS NOT NULL
+    AND expires_at < NOW();
+
+    -- Delete orphaned radreply entries (no corresponding radcheck)
+    DELETE rr FROM radreply rr
+    LEFT JOIN radcheck rc ON rr.username = rc.username
+    WHERE rc.id IS NULL;
+END;
+EOSQL
+
+    # Make event scheduler persistent across MySQL restarts
+    if ! grep -q "event_scheduler=ON" /etc/mysql/mysql.conf.d/mysqld.cnf 2>/dev/null; then
+        echo "" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+        echo "# Enable MySQL Event Scheduler for automatic cleanup" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+        echo "event_scheduler=ON" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+        print_success "MySQL Event Scheduler enabled (persistent)"
+    fi
+
+    print_success "Automatic cleanup configured (runs every 1 hour)"
 
     # Add columns to radacct
     print_status "Enhancing radacct table..."
@@ -1889,6 +1936,25 @@ EOSQL
     sed -i 's|^\([[:space:]]*\)private_key_file|#\1private_key_file|g' ${SQL_CONF}
 
     print_success "SQL module configured (SSL disabled for localhost)"
+
+    print_status "Deploying custom RADIUS SQL queries for dynamic Session-Timeout..."
+    QUERIES_CONF="${FREERADIUS_DIR}/mods-config/sql/main/mysql/queries.conf"
+
+    # Backup original queries.conf
+    if [ -f "${QUERIES_CONF}" ]; then
+        cp "${QUERIES_CONF}" "${QUERIES_CONF}.backup-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+        print_warning "Backed up original queries.conf"
+    fi
+
+    # Copy our custom queries configuration
+    if [ -f "${APP_DIR}/freeradius_queries.conf" ]; then
+        cp "${APP_DIR}/freeradius_queries.conf" "${QUERIES_CONF}"
+        chown freerad:freerad "${QUERIES_CONF}"
+        chmod 644 "${QUERIES_CONF}"
+        print_success "Custom RADIUS queries deployed (dynamic timeout enabled)"
+    else
+        print_warning "freeradius_queries.conf not found - using default queries"
+    fi
 
     print_status "Adding MikroTik as RADIUS client..."
     CLIENTS_CONF="${FREERADIUS_DIR}/clients.conf"
