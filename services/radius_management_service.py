@@ -922,13 +922,35 @@ class RadiusManagementService:
 
                     # Store expires_at timestamp - FreeRADIUS will use this to calculate dynamic timeout
                     if expires_at:
-                        logger.info("[RADIUS_SERVICE] Storing expiry timestamp in radcheck")
-                        cursor.execute("""
-                            UPDATE radcheck
-                            SET expires_at = %s
-                            WHERE username = %s
-                        """, (expires_at, mac_address))
-                        logger.info("[RADIUS_SERVICE] Expiry timestamp stored - FreeRADIUS will calculate remaining time")
+                        logger.info("[RADIUS_SERVICE] Storing expiry timestamp in radcheck", expires_at=expires_at)
+
+                        # Convert ISO 8601 format to MySQL datetime format
+                        # Input: "2025-12-08T15:49:51Z" -> Output: "2025-12-08 15:49:51"
+                        try:
+                            # Parse ISO format (handles both with and without timezone)
+                            if expires_at.endswith('Z'):
+                                expires_at_clean = expires_at[:-1]  # Remove 'Z'
+                            else:
+                                expires_at_clean = expires_at
+
+                            dt = datetime.fromisoformat(expires_at_clean)
+                            mysql_datetime = dt.strftime('%Y-%m-%d %H:%M:%S')
+
+                            logger.info("[RADIUS_SERVICE] Converted datetime format",
+                                       original=expires_at,
+                                       mysql_format=mysql_datetime)
+
+                            cursor.execute("""
+                                UPDATE radcheck
+                                SET expires_at = %s
+                                WHERE username = %s
+                            """, (mysql_datetime, mac_address))
+                            logger.info("[RADIUS_SERVICE] Expiry timestamp stored - FreeRADIUS will calculate remaining time")
+                        except (ValueError, AttributeError) as e:
+                            logger.error("[RADIUS_SERVICE] Failed to parse expires_at datetime",
+                                        expires_at=expires_at,
+                                        error=str(e))
+                            # Continue without setting expires_at - will use static timeout
 
                     logger.info("[RADIUS_SERVICE] Committing database transaction...")
                     conn.commit()
