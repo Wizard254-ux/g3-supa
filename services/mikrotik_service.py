@@ -628,7 +628,10 @@ class MikroTikService:
                 'hotspot-address': '172.31.0.1',
                 'dns-name': 'router.local',
                 'html-directory': html_directory,
-                'login-by': 'http-chap,http-pap'
+                'login-by': 'http-chap,http-pap',
+                'use-radius': 'yes',
+                'radius-accounting': 'yes',
+                'radius-interim-update': '10m'
             }
             
             existing_profile = list(hotspot_profile.select('name').where('name', 'hotspot-profile'))
@@ -643,7 +646,8 @@ class MikroTikService:
                 'address-pool': config['address_pool'],
                 'idle-timeout': config['idle_timeout'],
                 'keepalive-timeout': config['keepalive_timeout'],
-                'shared-users': 1
+                'shared-users': 1,
+                'add-mac-cookie': 'no'  # Disable MAC cookies to force RADIUS check on every reconnect
             }
             
             existing_user_profile = list(hotspot_user_profile.select('name').where('name', 'default-user-profile'))
@@ -747,8 +751,9 @@ class MikroTikService:
                     'address_pool': 'hotspot-pool',
                     'profile': 'hotspot-profile',
                     'addresses_per_mac': 1,
-                    'idle_timeout': 'none',
-                    'keepalive_timeout': '2m'
+                    'idle_timeout': '5m',        # Clean up inactive sessions after 5 minutes
+                    'keepalive_timeout': 'none',  # Don't keep sessions alive automatically
+                    'add_mac_cookie': 'no'       # Disable MAC cookies - force RADIUS on every reconnect
                 }
                 hotspot_result = self.configure_hotspot_server(bridge_name, 'hotspot1', hotspot_config, device_name)
                 setup_results.append(f"Hotspot Server: {hotspot_result['success']}")
@@ -1323,12 +1328,15 @@ class MikroTikService:
                     'hotspot-address': '172.31.0.1',
                     'dns-name': 'router.local',
                     'html-directory': html_directory,
-                    'login-by': 'http-chap,http-pap'
+                    'login-by': 'http-chap,http-pap',
+                    'use-radius': 'yes',
+                    'radius-accounting': 'yes',
+                    'radius-interim-update': '10m'
                 }
                 logger.info(f"Profile config: {profile_config}")
                 hotspot_profile.add(**profile_config)
-                setup_results.append(f"Created hotspot profile {profile_name}")
-                logger.info("Hotspot profile created")
+                setup_results.append(f"Created hotspot profile {profile_name} with RADIUS accounting")
+                logger.info("Hotspot profile created with interim updates enabled")
             else:
                 setup_results.append(f"Hotspot profile {profile_name} exists")
                 logger.info("Hotspot profile already exists")
@@ -1822,16 +1830,18 @@ class MikroTikService:
                                 'dns-name': 'router.local',
                                 'html-directory': html_directory,
                                 'login-by': 'http-chap,http-pap',
-                                'use-radius': 'yes'
+                                'use-radius': 'yes',
+                                'radius-accounting': 'yes',
+                                'radius-interim-update': '10m'
                             }
                             hotspot_profile.add(**profile_config)
 
                             if needs_recreate:
-                                setup_steps.append(f"Recreated hotspot profile {profile_name} with correct settings")
+                                setup_steps.append(f"Recreated hotspot profile {profile_name} with RADIUS accounting")
                             else:
-                                setup_steps.append(f"Created hotspot profile {profile_name} with RADIUS enabled")
+                                setup_steps.append(f"Created hotspot profile {profile_name} with RADIUS accounting")
 
-                            logger.info(f"Hotspot profile {profile_name} ready: use-radius=yes, html-directory={html_directory}")
+                            logger.info(f"Hotspot profile {profile_name} ready: use-radius=yes, accounting=yes, interim-update=10m")
 
                         # Configure DHCP server for the bridge (if not exists)
                         logger.info("Ensuring DHCP server exists...")
