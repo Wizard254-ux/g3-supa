@@ -319,6 +319,47 @@ class MikroTikService:
             logger.error(f"Failed to deauthorize hotspot user {username}", error=str(e))
             return False
 
+    def clear_hotspot_host(self, mac_address: str, device_name: str = 'core_router') -> Dict:
+        """
+        Clear hotspot host cache entry for a MAC address.
+        This forces MikroTik to forget any cached "not allowed" state
+        and send a fresh RADIUS authentication request on next connection.
+        """
+        try:
+            api = self.get_connection(device_name)
+
+            logger.info(f"Attempting to clear hotspot host cache for MAC: {mac_address} on device: {device_name}")
+
+            # Find and remove hotspot host entry by MAC address
+            hotspot_hosts = api.path('/ip/hotspot/host')
+            existing = list(hotspot_hosts.select('.id', 'mac-address').where('mac-address', mac_address))
+
+            if existing:
+                for host in existing:
+                    host_id = host['.id']
+                    hotspot_hosts.remove(host_id)
+                    logger.info(f"Removed hotspot host entry for MAC: {mac_address}")
+
+                return {
+                    'success': True,
+                    'message': f'Cleared {len(existing)} hotspot host entry(ies) for MAC {mac_address}',
+                    'entries_cleared': len(existing)
+                }
+            else:
+                logger.info(f"No hotspot host entry found for MAC: {mac_address} (this is normal if user never connected)")
+                return {
+                    'success': True,
+                    'message': f'No hotspot host entry found for MAC {mac_address}',
+                    'entries_cleared': 0
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to clear hotspot host for MAC {mac_address}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def create_pppoe_secret(self, username: str, password: str, package_info: Dict,
                             device_name: str = 'core_router') -> Dict:
         """Create PPPoE secret for user"""
@@ -628,7 +669,7 @@ class MikroTikService:
                 'hotspot-address': '172.31.0.1',
                 'dns-name': 'router.local',
                 'html-directory': html_directory,
-                'login-by': 'http-chap,http-pap',
+                'login-by': 'mac,http-chap,http-pap,mac-cookie',
                 'use-radius': 'yes',
                 'radius-accounting': 'yes',
                 'radius-interim-update': '10m'
@@ -1328,7 +1369,7 @@ class MikroTikService:
                     'hotspot-address': '172.31.0.1',
                     'dns-name': 'router.local',
                     'html-directory': html_directory,
-                    'login-by': 'http-chap,http-pap',
+                    'login-by': 'mac,http-chap,http-pap,mac-cookie',
                     'use-radius': 'yes',
                     'radius-accounting': 'yes',
                     'radius-interim-update': '10m'
@@ -1829,7 +1870,7 @@ class MikroTikService:
                                 'hotspot-address': '172.31.0.1',
                                 'dns-name': 'router.local',
                                 'html-directory': html_directory,
-                                'login-by': 'http-chap,http-pap',
+                                'login-by': 'mac,http-chap,http-pap,mac-cookie',
                                 'use-radius': 'yes',
                                 'radius-accounting': 'yes',
                                 'radius-interim-update': '10m'

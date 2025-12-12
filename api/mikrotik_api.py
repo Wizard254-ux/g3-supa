@@ -672,6 +672,54 @@ def hotspot_deauthorize():
         }), 500
 
 
+@mikrotik_bp.route('/hotspot/host/clear', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['device_name', 'mac_address']
+)
+def clear_hotspot_host():
+    """
+    Clear hotspot host cache entry for a MAC address.
+    This forces MikroTik to forget any cached "not allowed" state
+    and send a fresh RADIUS authentication request on next connection attempt.
+    """
+    try:
+        data = g.validated_data
+        device_name = data['device_name']
+        mac_address = data['mac_address']
+
+        logger.info(f"Clearing hotspot host cache for MAC: {mac_address} on device: {device_name}")
+
+        mikrotik_service = MikroTikService(current_app)
+
+        # Clear hotspot host entry
+        result = mikrotik_service.clear_hotspot_host(mac_address, device_name)
+
+        if result['success']:
+            logger.info(f"Successfully cleared hotspot host cache for MAC: {mac_address}")
+
+            return jsonify({
+                'success': True,
+                'message': f'Hotspot host cache cleared for MAC {mac_address}',
+                'details': result
+            }), 200
+        else:
+            logger.warning(f"Failed to clear hotspot host cache for MAC: {mac_address}: {result.get('error')}")
+
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to clear hotspot host cache')
+            }), 500
+
+    except Exception as e:
+        logger.error("Error clearing hotspot host cache", error=str(e))
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
 @mikrotik_bp.route('/pppoe/secret/create', methods=['POST'])
 @api_endpoint(
     require_auth=True,
