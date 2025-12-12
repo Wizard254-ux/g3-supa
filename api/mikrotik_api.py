@@ -676,25 +676,36 @@ def hotspot_deauthorize():
 @api_endpoint(
     require_auth=True,
     require_json=True,
-    required_fields=['device_name', 'mac_address']
+    required_fields=['username', 'password', 'host', 'mac_address']
 )
 def clear_hotspot_host():
     """
     Clear hotspot host cache entry for a MAC address.
     This forces MikroTik to forget any cached "not allowed" state
     and send a fresh RADIUS authentication request on next connection attempt.
+
+    Required fields:
+    - username: MikroTik admin username
+    - password: MikroTik admin password
+    - host: MikroTik IP address (VPN IP)
+    - mac_address: MAC address to clear from cache
     """
     try:
         data = g.validated_data
-        device_name = data['device_name']
+        username = data['username']
+        password = data['password']
+        host = data['host']
+        port = data.get('port', 8728)
         mac_address = data['mac_address']
 
-        logger.info(f"Clearing hotspot host cache for MAC: {mac_address} on device: {device_name}")
+        logger.info(f"Clearing hotspot host cache for MAC: {mac_address} at {host}:{port}")
 
         mikrotik_service = MikroTikService(current_app)
 
-        # Clear hotspot host entry
-        result = mikrotik_service.clear_hotspot_host(mac_address, device_name)
+        # Clear hotspot host entry using dynamic credentials
+        result = mikrotik_service.clear_hotspot_host_dynamic(
+            username, password, host, port, mac_address
+        )
 
         if result['success']:
             logger.info(f"Successfully cleared hotspot host cache for MAC: {mac_address}")

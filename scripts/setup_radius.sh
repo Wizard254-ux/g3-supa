@@ -103,22 +103,9 @@ echo -e "\n${YELLOW}[6/8] Adding MikroTik as RADIUS client...${NC}"
 # Add client configuration
 CLIENTS_CONF="${FREERADIUS_DIR}/clients.conf"
 
-# Check if MikroTik client already exists
-if ! grep -q "client mikrotik" ${CLIENTS_CONF}; then
-    cat >> ${CLIENTS_CONF} << EOF
-
-# MikroTik devices
-client mikrotik {
-    ipaddr = 0.0.0.0/0
-    secret = ${RADIUS_SECRET}
-    shortname = mikrotik
-    nas_type = other
-}
-EOF
-    echo -e "${GREEN}MikroTik client added to RADIUS${NC}"
-else
-    echo -e "${YELLOW}MikroTik client already configured${NC}"
-fi
+# NOTE: Catch-all client (0.0.0.0/0) removed to prevent conflicts
+# Individual MikroTik devices should be added via the API with specific IPs
+echo -e "${YELLOW}Skipping catch-all client - use API to add specific MikroTik devices${NC}"
 
 echo -e "\n${YELLOW}[7/8] Creating custom RADIUS tables for multi-tenant packages...${NC}"
 # Add custom table for bandwidth packages with username-based multi-tenancy

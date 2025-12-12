@@ -1962,25 +1962,13 @@ EOSQL
         print_warning "freeradius_queries.conf not found - using default queries"
     fi
 
-    print_status "Adding MikroTik as RADIUS client..."
+    print_status "Skipping catch-all RADIUS client (prevents conflicts)..."
     CLIENTS_CONF="${FREERADIUS_DIR}/clients.conf"
 
-    # Check if MikroTik client already exists
-    if ! grep -q "client mikrotik" ${CLIENTS_CONF}; then
-        cat >> ${CLIENTS_CONF} << EOF
-
-# MikroTik devices
-client mikrotik {
-    ipaddr = 0.0.0.0/0
-    secret = ${RADIUS_SECRET}
-    shortname = mikrotik
-    nas_type = other
-}
-EOF
-        print_success "MikroTik client added to RADIUS"
-    else
-        print_warning "MikroTik client already configured"
-    fi
+    # NOTE: Catch-all client (0.0.0.0/0) removed to prevent conflicts
+    # Individual MikroTik devices should be added via the API with specific IPs
+    print_warning "Use the API to add specific MikroTik devices with unique secrets"
+    print_warning "Catch-all clients can cause authentication conflicts"
 
     # Set permissions for Flask app to modify clients.conf
     print_status "Setting permissions for Flask app to manage RADIUS clients..."
