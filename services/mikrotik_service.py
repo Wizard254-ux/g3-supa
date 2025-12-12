@@ -360,6 +360,55 @@ class MikroTikService:
                 'error': str(e)
             }
 
+    def clear_hotspot_host_dynamic(self, username: str, password: str, host: str, port: int,
+                                    mac_address: str) -> Dict:
+        """
+        Clear hotspot host cache entry for a MAC address using dynamic credentials.
+        This forces MikroTik to forget any cached "not allowed" state
+        and send a fresh RADIUS authentication request on next connection.
+        """
+        try:
+            import librouteros
+
+            logger.info(f"Attempting to clear hotspot host cache for MAC: {mac_address} at {host}:{port}")
+
+            # Connect to MikroTik
+            api = librouteros.connect(
+                host=host, username=username, password=password, port=port, timeout=10
+            )
+
+            # Find and remove hotspot host entry by MAC address
+            hotspot_hosts = api.path('/ip/hotspot/host')
+            existing = list(hotspot_hosts.select('.id', 'mac-address').where('mac-address', mac_address))
+
+            if existing:
+                for host_entry in existing:
+                    host_id = host_entry['.id']
+                    hotspot_hosts.remove(host_id)
+                    logger.info(f"Removed hotspot host entry for MAC: {mac_address}")
+
+                api.close()
+                return {
+                    'success': True,
+                    'message': f'Cleared {len(existing)} hotspot host entry(ies) for MAC {mac_address}',
+                    'entries_cleared': len(existing)
+                }
+            else:
+                logger.info(f"No hotspot host entry found for MAC: {mac_address} (this is normal if user never connected)")
+                api.close()
+                return {
+                    'success': True,
+                    'message': f'No hotspot host entry found for MAC {mac_address}',
+                    'entries_cleared': 0
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to clear hotspot host for MAC {mac_address}", error=str(e))
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def create_pppoe_secret(self, username: str, password: str, package_info: Dict,
                             device_name: str = 'core_router') -> Dict:
         """Create PPPoE secret for user"""
