@@ -1915,10 +1915,8 @@ EOSQL
         FREERADIUS_DIR="/etc/freeradius/3.2"
     fi
 
-    # Enable SQL module
-    if [ ! -L "${FREERADIUS_DIR}/mods-enabled/sql" ]; then
-        ln -s ${FREERADIUS_DIR}/mods-available/sql ${FREERADIUS_DIR}/mods-enabled/sql
-    fi
+    # Enable SQL module (force symlink creation even if file exists)
+    ln -sf ${FREERADIUS_DIR}/mods-available/sql ${FREERADIUS_DIR}/mods-enabled/sql
 
     # Configure SQL connection
     SQL_CONF="${FREERADIUS_DIR}/mods-enabled/sql"
@@ -2013,7 +2011,8 @@ EOSQL
 
     # Configure exec module for cache clearing on Accounting-Stop
     print_status "Configuring exec module for automatic cache clearing..."
-    cat > ${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop << 'EXEC_EOF'
+    if [ ! -f "${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop" ]; then
+        cat > ${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop << 'EXEC_EOF'
 # Execute Python script to clear MikroTik cache on Accounting-Stop
 # This ensures users are redirected to packages page when session expires
 exec exec_on_accounting_stop {
@@ -2024,10 +2023,14 @@ exec exec_on_accounting_stop {
     timeout = 10
 }
 EXEC_EOF
+        print_success "Exec module created"
+    else
+        print_warning "Exec module already exists, skipping (preserving existing config)"
+    fi
 
     # Enable the exec module
     ln -sf ${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop ${FREERADIUS_DIR}/mods-enabled/exec_on_accounting_stop
-    print_success "Exec module configured"
+    print_success "Exec module enabled"
 
     # Add exec_on_accounting_stop to accounting section
     print_status "Updating accounting section to trigger cache clearing..."
