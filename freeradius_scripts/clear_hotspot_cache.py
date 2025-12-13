@@ -29,8 +29,9 @@ import sys
 import requests
 import json
 import logging
-import mysql.connector
 from datetime import datetime
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 # Configuration
 G3_SUPER_API_URL = os.getenv('G3_SUPER_API_URL', 'http://localhost:5000/api')
@@ -49,41 +50,71 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Database configuration for RADIUS (from environment variables)
-RADIUS_DB_CONFIG = {
-    'host': os.getenv('RADIUS_DB_HOST', 'localhost'),
-    'user': os.getenv('RADIUS_DB_USER', 'radius'),
-    'password': os.getenv('RADIUS_DB_PASS', 'RadiusSecurePass2024!'),
-    'database': os.getenv('RADIUS_DB_NAME', 'radius'),
-    'charset': 'utf8mb4'
-}
+def get_radius_db_url():
+    """Build database URL from environment variables"""
+    host = os.getenv('RADIUS_DB_HOST', 'localhost')
+    user = os.getenv('RADIUS_DB_USER', 'radius')
+    password = os.getenv('RADIUS_DB_PASS', 'RadiusSecurePass2024!')
+    database = os.getenv('RADIUS_DB_NAME', 'radius')
+    return f"mysql+pymysql://{user}:{password}@{host}/{database}"
 
 def get_mikrotik_credentials_from_db(nas_ip):
-    """Get MikroTik credentials from RADIUS database"""
+    """Get MikroTik credentials from RADIUS database using SQLAlchemy"""
+    engine = None
+    session = None
+    
     try:
-        conn = mysql.connector.connect(**RADIUS_DB_CONFIG)
-        cursor = conn.cursor(dictionary=True)
+        # Create database engine with production settings
+        db_url = get_radius_db_url()
+        engine = create_engine(
+            db_url,
+            pool_size=5,
+            pool_timeout=5,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+            connect_args={
+                'connect_timeout': 5,
+                'read_timeout': 10,
+                'write_timeout': 10
+            }
+        )
+        
+        # Create session
+        Session = sessionmaker(bind=engine)
+        session = Session()
         
         # Query nas table for router credentials
-        cursor.execute(
-            "SELECT shortname, secret FROM nas WHERE nasname = %s", 
-            (nas_ip,)
-        )
-        result = cursor.fetchone()
-        
-        cursor.close()
-        conn.close()
+        result = session.execute(
+            text("SELECT shortname, secret FROM nas WHERE nasname = :nas_ip"),
+            {'nas_ip': nas_ip}
+        ).fetchone()
         
         if result:
             return {
-                'username': os.getenv('MIKROTIK_DEFAULT_USER', 'f2net_user'),  # From environment
-                'password': result['secret'],  # RADIUS secret is MikroTik password
-                'identity': result['shortname']  # Router identity
+                'username': os.getenv('MIKROTIK_DEFAULT_USER', 'f2net_user'),
+                'password': result.secret,  # RADIUS secret is MikroTik password
+                'identity': result.shortname  # Router identity
             }
+        
+        logger.warning(f"No credentials found for NAS IP: {nas_ip}")
         return None
         
     except Exception as e:
-        logger.error(f"Database error getting credentials: {e}")
+        logger.error(f"Database error getting credentials for {nas_ip}: {e}")
         return None
+        
+    finally:
+        # Always cleanup resources
+        if session:
+            try:
+                session.close()
+            except:
+                pass
+        if engine:
+            try:
+                engine.dispose()
+            except:
+                pass
 
 
 def log_accounting_stop():
@@ -274,7 +305,7 @@ def main():
             logger.error("No device identity found, skipping cache clear")
             sys.exit(1)
 
-        # Clear MikroTik cache
+        # Clear MikroTik cache with fallback handling
         success = clear_mikrotik_cache(mac_address, nas_ip, device_identity)
 
         if success:
@@ -285,8 +316,11 @@ def main():
         else:
             logger.error("="*80)
             logger.error("✗ ACCOUNTING STOP PROCESSED - CACHE CLEAR FAILED")
+            logger.error("Cache clear failed but session was properly terminated by MikroTik")
+            logger.error("User will still be disconnected, cache may clear on next connection attempt")
             logger.error("="*80)
-            sys.exit(1)
+            # Exit with 0 to not block FreeRADIUS accounting
+            sys.exit(0)
 
     except Exception as e:
         logger.error(f"Unexpected error in main: {e}")
