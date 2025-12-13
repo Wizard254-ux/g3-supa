@@ -33,7 +33,7 @@ from datetime import datetime
 
 # Configuration
 G3_SUPER_API_URL = os.getenv('G3_SUPER_API_URL', 'http://localhost:5000/api')
-API_KEY = os.getenv('MTK_API_KEY', '')  # Same API key used by Django
+API_KEY = os.getenv('MTK_API_KEY', 'your-django-api-key-for-authentication')  # Same API key used by Django
 
 # Logging
 LOG_FILE = '/var/log/freeradius/cache_clear.log'
