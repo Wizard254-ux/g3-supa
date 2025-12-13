@@ -26,6 +26,9 @@ CONFIG_DIR="/etc/f2net_isp"
 BACKUP_DIR="/var/backups/f2net_isp"
 SYSTEMD_DIR="/etc/systemd/system"
 
+# Script directory (for finding freeradius_scripts)
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 # Execution flags
 RUN_ALL=true
 RUN_SYSTEM=false
@@ -1988,6 +1991,53 @@ EOSQL
     else
         print_error "Configuration has errors. Please check."
         return 1
+    fi
+
+    # Deploy automatic cache clearing on session expiry
+    print_status "Deploying automatic cache clearing script..."
+    if [ -f "${SCRIPT_DIR}/freeradius_scripts/clear_hotspot_cache.py" ]; then
+        cp "${SCRIPT_DIR}/freeradius_scripts/clear_hotspot_cache.py" /usr/local/bin/
+        chmod +x /usr/local/bin/clear_hotspot_cache.py
+        print_success "Cache clearing script deployed to /usr/local/bin/"
+    else
+        print_warning "clear_hotspot_cache.py not found, skipping..."
+    fi
+
+    # Create log directory for cache clearing
+    print_status "Creating cache clearing log directory..."
+    mkdir -p /var/log/freeradius
+    touch /var/log/freeradius/cache_clear.log
+    chown freerad:freerad /var/log/freeradius/cache_clear.log
+    chmod 644 /var/log/freeradius/cache_clear.log
+    print_success "Log directory created"
+
+    # Configure exec module for cache clearing on Accounting-Stop
+    print_status "Configuring exec module for automatic cache clearing..."
+    cat > ${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop << 'EXEC_EOF'
+# Execute Python script to clear MikroTik cache on Accounting-Stop
+# This ensures users are redirected to packages page when session expires
+exec exec_on_accounting_stop {
+    wait = no
+    program = "/usr/local/bin/clear_hotspot_cache.py"
+    input_pairs = request
+    shell_escape = yes
+    timeout = 10
+}
+EXEC_EOF
+
+    # Enable the exec module
+    ln -sf ${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop ${FREERADIUS_DIR}/mods-enabled/exec_on_accounting_stop
+    print_success "Exec module configured"
+
+    # Add exec_on_accounting_stop to accounting section
+    print_status "Updating accounting section to trigger cache clearing..."
+    SITES_DEFAULT="${FREERADIUS_DIR}/sites-available/default"
+    if grep -q "exec_on_accounting_stop" ${SITES_DEFAULT}; then
+        print_warning "Accounting section already configured for cache clearing"
+    else
+        # Insert exec_on_accounting_stop after -sql in accounting section
+        sed -i '/accounting {/,/}/ s/\(\s*-sql\)/\1\n\texec_on_accounting_stop/' ${SITES_DEFAULT}
+        print_success "Accounting section updated - cache will clear on session expiry"
     fi
 
     print_status "Starting FreeRADIUS service..."
