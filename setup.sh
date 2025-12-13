@@ -2041,9 +2041,16 @@ EXEC_EOF
     if grep -q "exec_on_accounting_stop" ${SITES_DEFAULT}; then
         print_warning "Accounting section already configured for cache clearing"
     else
-        # Insert exec_on_accounting_stop after -sql in accounting section
-        sed -i '/accounting {/,/}/ s/\(\s*-sql\)/\1\n\texec_on_accounting_stop/' ${SITES_DEFAULT}
-        print_success "Accounting section updated - cache will clear on session expiry"
+        # Insert exec_on_accounting_stop after unix line in accounting section
+        # This triggers automatic cache clearing when sessions expire
+        sed -i '/^\s*unix$/a\\texec_on_accounting_stop' ${SITES_DEFAULT}
+
+        # Verify it was added
+        if grep -q "exec_on_accounting_stop" ${SITES_DEFAULT}; then
+            print_success "Accounting section updated - cache will clear on session expiry"
+        else
+            print_warning "Failed to update accounting section automatically. Please add manually."
+        fi
     fi
 
     print_status "Starting FreeRADIUS service..."
