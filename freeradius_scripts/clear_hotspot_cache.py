@@ -64,6 +64,8 @@ def get_mikrotik_credentials_from_db(nas_ip):
     session = None
     
     try:
+        logger.info(f"[DB] Connecting to RADIUS database for NAS: {nas_ip}")
+        
         # Create database engine with production settings
         db_url = get_radius_db_url()
         engine = create_engine(
@@ -79,9 +81,13 @@ def get_mikrotik_credentials_from_db(nas_ip):
             }
         )
         
+        logger.info(f"[DB] Database connection established")
+        
         # Create session
         Session = sessionmaker(bind=engine)
         session = Session()
+        
+        logger.info(f"[DB] Querying nas table for router: {nas_ip}")
         
         # Query nas table for router credentials
         result = session.execute(
@@ -90,17 +96,18 @@ def get_mikrotik_credentials_from_db(nas_ip):
         ).fetchone()
         
         if result:
+            logger.info(f"[DB] ✓ Found router credentials - Identity: {result.shortname}")
             return {
                 'username': os.getenv('MIKROTIK_DEFAULT_USER', 'f2net_user'),
                 'password': result.secret,  # RADIUS secret is MikroTik password
                 'identity': result.shortname  # Router identity
             }
         
-        logger.warning(f"No credentials found for NAS IP: {nas_ip}")
+        logger.warning(f"[DB] ✗ No credentials found for NAS IP: {nas_ip}")
         return None
         
     except Exception as e:
-        logger.error(f"Database error getting credentials for {nas_ip}: {e}")
+        logger.error(f"[DB] ✗ Database error getting credentials for {nas_ip}: {e}")
         return None
         
     finally:
@@ -108,11 +115,13 @@ def get_mikrotik_credentials_from_db(nas_ip):
         if session:
             try:
                 session.close()
+                logger.debug(f"[DB] Session closed")
             except:
                 pass
         if engine:
             try:
                 engine.dispose()
+                logger.debug(f"[DB] Engine disposed")
             except:
                 pass
 
@@ -142,132 +151,95 @@ def log_accounting_stop():
     return attrs
 
 
-def get_device_details(nas_ip):
-    """
-    Get device details from g3_super to find router identity and credentials.
-
-    Args:
-        nas_ip (str): NAS IP address (VPN IP like 10.8.0.45)
-
-    Returns:
-        dict: Device details including identity, username, password
-    """
-    try:
-        # Query nas table via g3_super to get router identity
-        url = f"{G3_SUPER_API_URL}/radius/nas/lookup"
-        headers = {
-            'Content-Type': 'application/json',
-            'X-API-Key': API_KEY
-        }
-        payload = {'nas_ip': nas_ip}
-
-        logger.info(f"Looking up device details for NAS IP: {nas_ip}")
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
-
-        if response.status_code == 200:
-            data = response.json()
-            logger.info(f"Device found: {data.get('shortname', 'N/A')}")
-            return data
-        else:
-            logger.error(f"Failed to lookup device: {response.status_code} - {response.text}")
-            return None
-
-    except Exception as e:
-        logger.error(f"Error looking up device: {e}")
-        return None
 
 
-def clear_mikrotik_cache(mac_address, nas_ip, device_identity):
+
+def clear_mikrotik_cache(mac_address, nas_ip):
     """
     Clear MikroTik hotspot host cache for the given MAC address.
 
     Args:
         mac_address (str): User's MAC address
-        nas_ip (str): Router's VPN IP
-        device_identity (str): Router identity/client_name
+        nas_ip (str): Router's NAS IP
 
     Returns:
         bool: True if cache cleared successfully
     """
     try:
-        # First, get router credentials from Django database via device status
-        status_url = f"{G3_SUPER_API_URL}/mikrotik/devices/{device_identity}/currentstatus"
-        headers = {
-            'Content-Type': 'application/json',
-            'X-API-Key': API_KEY
-        }
-
-        logger.info(f"Getting router status for: {device_identity}")
-        status_response = requests.get(status_url, headers=headers, timeout=5)
-
-        if status_response.status_code != 200:
-            logger.error(f"Failed to get router status: {status_response.text}")
-            return False
-
-        status_data = status_response.json()
-        data = status_data.get('data', {})
-
-        if not (data.get('connected') or data.get('vpn_connected')):
-            logger.warning(f"Router {device_identity} is not connected to VPN")
-            return False
-
-        # Get VPN IP from connection info
-        vpn_info = data.get('vpn_connection_info', {})
-        vpn_ip = vpn_info.get('virtual_address')
-
-        if not vpn_ip:
-            logger.error(f"No VPN IP found for router {device_identity}")
-            return False
-
-        logger.info(f"Router VPN IP: {vpn_ip}")
-
+        logger.info(f"[CACHE] Starting cache clear process for MAC: {mac_address}")
+        
         # Get router credentials from RADIUS database
+        logger.info(f"[CACHE] Getting router credentials from database...")
         router_credentials = get_mikrotik_credentials_from_db(nas_ip)
         if not router_credentials:
-            logger.error(f"No credentials found for router at {nas_ip}")
+            logger.error(f"[CACHE] ✗ No credentials found for router at {nas_ip}")
             return False
             
         username = router_credentials['username']
         password = router_credentials['password']
+        identity = router_credentials['identity']
         
-        logger.info(f"Using credentials - Username: {username}, Password: {'*' * len(password)}")
+        logger.info(f"[CACHE] ✓ Got credentials - Router: {identity}, Username: {username}")
 
         # Call g3_super API to clear cache
         clear_url = f"{G3_SUPER_API_URL}/mikrotik/hotspot/host/clear"
+        headers = {
+            'Content-Type': 'application/json',
+            'X-API-Key': API_KEY
+        }
         payload = {
             'username': username,
             'password': password,
-            'host': vpn_ip,
+            'host': nas_ip,  # Use NAS IP directly
             'port': 8728,
             'mac_address': mac_address
         }
 
-        logger.info(f"Clearing cache for MAC: {mac_address} on {vpn_ip}")
+        logger.info(f"[API] Calling cache clear API: {clear_url}")
+        logger.info(f"[API] Target: {nas_ip}:8728, MAC: {mac_address}")
+        
         clear_response = requests.post(clear_url, json=payload, headers=headers, timeout=10)
+        
+        logger.info(f"[API] Response status: {clear_response.status_code}")
 
         if clear_response.status_code == 200:
             result = clear_response.json()
+            logger.info(f"[API] Response data: {result}")
+            
             if result.get('success'):
-                logger.info(f"✓ Cache cleared successfully! Entries cleared: {result.get('entries_cleared', 0)}")
+                entries_cleared = result.get('entries_cleared', 0)
+                logger.info(f"[CACHE] ✓ SUCCESS! Cache cleared - Entries removed: {entries_cleared}")
                 return True
             else:
-                logger.error(f"✗ Cache clear failed: {result.get('error', 'Unknown error')}")
+                error_msg = result.get('error', 'Unknown error')
+                logger.error(f"[CACHE] ✗ FAILED! API returned error: {error_msg}")
                 return False
         else:
-            logger.error(f"✗ API call failed: {clear_response.status_code} - {clear_response.text}")
+            logger.error(f"[API] ✗ HTTP ERROR! Status: {clear_response.status_code}")
+            logger.error(f"[API] Response: {clear_response.text}")
             return False
 
+    except requests.exceptions.Timeout:
+        logger.error(f"[API] ✗ TIMEOUT! Cache clear API took longer than 10 seconds")
+        return False
+    except requests.exceptions.ConnectionError:
+        logger.error(f"[API] ✗ CONNECTION ERROR! Cannot reach g3_super API at {G3_SUPER_API_URL}")
+        return False
     except Exception as e:
-        logger.error(f"Error clearing cache: {e}")
+        logger.error(f"[CACHE] ✗ UNEXPECTED ERROR! {e}")
         import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"[CACHE] Traceback: {traceback.format_exc()}")
         return False
 
 
 def main():
     """Main execution function"""
+    start_time = datetime.now()
+    logger.info(f"[MAIN] ⚡ SCRIPT STARTED at {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
     try:
         # Log the accounting stop event
+        logger.info(f"[MAIN] Reading RADIUS environment variables...")
         attrs = log_accounting_stop()
 
         # Extract required attributes
@@ -275,59 +247,65 @@ def main():
         nas_ip = attrs.get('NAS_IP_ADDRESS')
         acct_type = attrs.get('ACCT_STATUS_TYPE')
         terminate_cause = attrs.get('ACCT_TERMINATE_CAUSE')
+        session_time = attrs.get('ACCT_SESSION_TIME')
+
+        logger.info(f"[MAIN] Extracted data - MAC: {mac_address}, NAS: {nas_ip}, Type: {acct_type}")
 
         # Validate this is an accounting stop
         if acct_type != 'Stop':
-            logger.info(f"Not an accounting stop event (Type: {acct_type}), skipping cache clear")
+            logger.info(f"[MAIN] ⏭️  Not an accounting stop event (Type: {acct_type}), skipping cache clear")
+            logger.info(f"[MAIN] ✅ Script completed in {(datetime.now() - start_time).total_seconds():.2f}s")
             sys.exit(0)
 
         # Validate MAC address
         if not mac_address or mac_address == 'N/A':
-            logger.error("No MAC address found in CALLING_STATION_ID, cannot clear cache")
+            logger.error(f"[MAIN] ❌ VALIDATION FAILED! No MAC address found in CALLING_STATION_ID")
+            logger.error(f"[MAIN] ❌ Script failed in {(datetime.now() - start_time).total_seconds():.2f}s")
             sys.exit(1)
 
         # Validate NAS IP
         if not nas_ip or nas_ip == 'N/A':
-            logger.error("No NAS IP address found, cannot determine router")
+            logger.error(f"[MAIN] ❌ VALIDATION FAILED! No NAS IP address found")
+            logger.error(f"[MAIN] ❌ Script failed in {(datetime.now() - start_time).total_seconds():.2f}s")
             sys.exit(1)
 
-        logger.info(f"Processing cache clear for MAC: {mac_address} on NAS: {nas_ip}")
-        logger.info(f"Termination cause: {terminate_cause}")
+        logger.info(f"[MAIN] ✅ Validation passed - Processing cache clear...")
+        logger.info(f"[MAIN] 📊 Session details - Duration: {session_time}s, Cause: {terminate_cause}")
 
-        # Get device details from g3_super
-        device = get_device_details(nas_ip)
-        if not device:
-            logger.error("Could not get device details, skipping cache clear")
-            sys.exit(1)
-
-        device_identity = device.get('shortname') or device.get('client_name')
-        if not device_identity:
-            logger.error("No device identity found, skipping cache clear")
-            sys.exit(1)
-
-        # Clear MikroTik cache with fallback handling
-        success = clear_mikrotik_cache(mac_address, nas_ip, device_identity)
+        # Clear MikroTik cache
+        logger.info(f"[MAIN] 🚀 Starting cache clear operation...")
+        success = clear_mikrotik_cache(mac_address, nas_ip)
+        
+        execution_time = (datetime.now() - start_time).total_seconds()
 
         if success:
             logger.info("="*80)
-            logger.info("✓ ACCOUNTING STOP PROCESSED - CACHE CLEARED SUCCESSFULLY")
+            logger.info(f"[MAIN] 🎉 SUCCESS! CACHE CLEARED SUCCESSFULLY")
+            logger.info(f"[MAIN] 📈 User {mac_address} will be redirected to packages page")
+            logger.info(f"[MAIN] ⏱️  Total execution time: {execution_time:.2f} seconds")
             logger.info("="*80)
             sys.exit(0)
         else:
             logger.error("="*80)
-            logger.error("✗ ACCOUNTING STOP PROCESSED - CACHE CLEAR FAILED")
-            logger.error("Cache clear failed but session was properly terminated by MikroTik")
-            logger.error("User will still be disconnected, cache may clear on next connection attempt")
+            logger.error(f"[MAIN] ⚠️  CACHE CLEAR FAILED (but session terminated normally)")
+            logger.error(f"[MAIN] 🔄 User will still be disconnected by MikroTik timeout")
+            logger.error(f"[MAIN] 🔧 Cache may clear automatically on next connection attempt")
+            logger.error(f"[MAIN] ⏱️  Total execution time: {execution_time:.2f} seconds")
             logger.error("="*80)
             # Exit with 0 to not block FreeRADIUS accounting
             sys.exit(0)
 
     except Exception as e:
-        logger.error(f"Unexpected error in main: {e}")
+        execution_time = (datetime.now() - start_time).total_seconds()
+        logger.error(f"[MAIN] 💥 CRITICAL ERROR! Unexpected exception: {e}")
+        logger.error(f"[MAIN] ⏱️  Failed after {execution_time:.2f} seconds")
         import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"[MAIN] 🔍 Full traceback: {traceback.format_exc()}")
         sys.exit(1)
 
 
 if __name__ == '__main__':
+    logger.info(f"[INIT] 🔥 FreeRADIUS Cache Clear Script v1.0")
+    logger.info(f"[INIT] 📍 PID: {os.getpid()}, User: {os.getenv('USER', 'unknown')}")
+    logger.info(f"[INIT] 🌐 API URL: {G3_SUPER_API_URL}")
     main()
