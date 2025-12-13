@@ -1921,8 +1921,11 @@ EOSQL
     # Configure SQL connection
     SQL_CONF="${FREERADIUS_DIR}/mods-enabled/sql"
 
-    # Backup original
-    cp ${SQL_CONF} ${SQL_CONF}.backup 2>/dev/null || true
+    # Backup original (only once, to /tmp to avoid FreeRADIUS loading it)
+    if [ ! -f "/tmp/freeradius-sql.backup" ]; then
+        cp ${SQL_CONF} /tmp/freeradius-sql.backup 2>/dev/null || true
+        print_status "SQL config backed up to /tmp/freeradius-sql.backup"
+    fi
 
     # Update SQL configuration
     sed -i "s/driver = \"rlm_sql_null\"/driver = \"rlm_sql_mysql\"/" ${SQL_CONF}
