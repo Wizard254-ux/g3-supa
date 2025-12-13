@@ -29,6 +29,7 @@ import sys
 import requests
 import json
 import logging
+import mysql.connector
 from datetime import datetime
 
 # Configuration
@@ -46,6 +47,43 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Database configuration for RADIUS (from environment variables)
+RADIUS_DB_CONFIG = {
+    'host': os.getenv('RADIUS_DB_HOST', 'localhost'),
+    'user': os.getenv('RADIUS_DB_USER', 'radius'),
+    'password': os.getenv('RADIUS_DB_PASS', 'RadiusSecurePass2024!'),
+    'database': os.getenv('RADIUS_DB_NAME', 'radius'),
+    'charset': 'utf8mb4'
+}
+
+def get_mikrotik_credentials_from_db(nas_ip):
+    """Get MikroTik credentials from RADIUS database"""
+    try:
+        conn = mysql.connector.connect(**RADIUS_DB_CONFIG)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Query nas table for router credentials
+        cursor.execute(
+            "SELECT shortname, secret FROM nas WHERE nasname = %s", 
+            (nas_ip,)
+        )
+        result = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if result:
+            return {
+                'username': os.getenv('MIKROTIK_DEFAULT_USER', 'f2net_user'),  # From environment
+                'password': result['secret'],  # RADIUS secret is MikroTik password
+                'identity': result['shortname']  # Router identity
+            }
+        return None
+        
+    except Exception as e:
+        logger.error(f"Database error getting credentials: {e}")
+        return None
 
 
 def log_accounting_stop():
@@ -152,11 +190,16 @@ def clear_mikrotik_cache(mac_address, nas_ip, device_identity):
 
         logger.info(f"Router VPN IP: {vpn_ip}")
 
-        # Get router credentials (this would need to be passed from Django)
-        # For now, we'll use default credentials or get from database
-        # TODO: Implement credential lookup from Django database
-        username = os.getenv('MIKROTIK_DEFAULT_USER', 'admin')
-        password = os.getenv('MIKROTIK_DEFAULT_PASS', '')  # Get from env or database
+        # Get router credentials from RADIUS database
+        router_credentials = get_mikrotik_credentials_from_db(nas_ip)
+        if not router_credentials:
+            logger.error(f"No credentials found for router at {nas_ip}")
+            return False
+            
+        username = router_credentials['username']
+        password = router_credentials['password']
+        
+        logger.info(f"Using credentials - Username: {username}, Password: {'*' * len(password)}")
 
         # Call g3_super API to clear cache
         clear_url = f"{G3_SUPER_API_URL}/mikrotik/hotspot/host/clear"
