@@ -97,7 +97,11 @@ sed -i "s/^.*login = .*/\tlogin = \"${RADIUS_DB_USER}\"/" ${SQL_CONF}
 sed -i "s/^.*password = .*/\tpassword = \"${RADIUS_DB_PASS}\"/" ${SQL_CONF}
 sed -i "s/^.*radius_db = .*/\tradius_db = \"${RADIUS_DB_NAME}\"/" ${SQL_CONF}
 
-echo -e "${GREEN}SQL module configured${NC}"
+# Enable SQL client loading from nas table
+sed -i 's/^[[:space:]]*#[[:space:]]*read_clients = yes/\tread_clients = yes/' ${SQL_CONF}
+sed -i 's/^[[:space:]]*#[[:space:]]*client_table = "nas"/\tclient_table = "nas"/' ${SQL_CONF}
+
+echo -e "${GREEN}SQL module configured (with SQL client loading enabled)${NC}"
 
 echo -e "\n${YELLOW}[6/8] Adding MikroTik as RADIUS client...${NC}"
 # Add client configuration
@@ -125,6 +129,21 @@ CREATE TABLE IF NOT EXISTS packages (
     INDEX idx_username (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Bandwidth packages per ISP owner';
 
+-- NAS table for dynamic RADIUS client loading from SQL
+CREATE TABLE IF NOT EXISTS nas (
+    id INT(10) NOT NULL AUTO_INCREMENT,
+    nasname VARCHAR(128) NOT NULL COMMENT 'VPN IP address of router',
+    shortname VARCHAR(32) COMMENT 'Router identity',
+    type VARCHAR(30) DEFAULT 'other',
+    ports INT(5),
+    secret VARCHAR(60) NOT NULL DEFAULT 'testing123' COMMENT 'RADIUS shared secret',
+    server VARCHAR(64),
+    community VARCHAR(50),
+    description VARCHAR(200) DEFAULT 'RADIUS Client',
+    PRIMARY KEY (id),
+    KEY nasname (nasname)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='RADIUS NAS clients for SQL client loading';
+
 -- Enhance radcheck table for multi-tenancy and package association
 ALTER TABLE radcheck
     ADD COLUMN IF NOT EXISTS username_owner VARCHAR(64) COMMENT 'ISP owner username',
@@ -148,7 +167,55 @@ EOF
 
 echo -e "${GREEN}Multi-tenant RADIUS tables created successfully${NC}"
 
-echo -e "\n${YELLOW}[8/8] Starting FreeRADIUS service...${NC}"
+echo -e "\n${YELLOW}[8/11] Deploying cache clearing script...${NC}"
+# Deploy the Python script for automatic MikroTik cache clearing
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+if [ -f "${PROJECT_ROOT}/freeradius_scripts/clear_hotspot_cache.py" ]; then
+    cp "${PROJECT_ROOT}/freeradius_scripts/clear_hotspot_cache.py" /usr/local/bin/
+    chmod +x /usr/local/bin/clear_hotspot_cache.py
+    echo -e "${GREEN}Cache clearing script deployed${NC}"
+else
+    echo -e "${YELLOW}Warning: clear_hotspot_cache.py not found. Skipping...${NC}"
+fi
+
+# Create log directory for cache clearing
+mkdir -p /var/log/freeradius
+touch /var/log/freeradius/cache_clear.log
+chown freerad:freerad /var/log/freeradius/cache_clear.log
+chmod 644 /var/log/freeradius/cache_clear.log
+echo -e "${GREEN}Log directory created${NC}"
+
+echo -e "\n${YELLOW}[9/11] Configuring exec module for cache clearing...${NC}"
+# Create exec module config for accounting-stop cache clearing
+cat > ${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop << 'EXEC_EOF'
+# Execute Python script to clear MikroTik cache on Accounting-Stop
+exec exec_on_accounting_stop {
+    wait = no
+    program = "/usr/local/bin/clear_hotspot_cache.py"
+    input_pairs = request
+    shell_escape = yes
+    timeout = 10
+}
+EXEC_EOF
+
+# Enable the exec module
+ln -sf ${FREERADIUS_DIR}/mods-available/exec_on_accounting_stop ${FREERADIUS_DIR}/mods-enabled/exec_on_accounting_stop
+echo -e "${GREEN}Exec module configured${NC}"
+
+echo -e "\n${YELLOW}[10/11] Updating accounting section...${NC}"
+# Add exec_on_accounting_stop to accounting section in default site
+SITES_DEFAULT="${FREERADIUS_DIR}/sites-available/default"
+if grep -q "exec_on_accounting_stop" ${SITES_DEFAULT}; then
+    echo -e "${YELLOW}Accounting section already configured${NC}"
+else
+    # Insert exec_on_accounting_stop after -sql in accounting section
+    sed -i '/accounting {/,/}/ s/\(\s*-sql\)/\1\n\texec_on_accounting_stop/' ${SITES_DEFAULT}
+    echo -e "${GREEN}Accounting section updated${NC}"
+fi
+
+echo -e "\n${YELLOW}[11/11] Starting FreeRADIUS service...${NC}"
 # Stop FreeRADIUS if running
 systemctl stop freeradius || true
 

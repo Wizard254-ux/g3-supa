@@ -980,6 +980,54 @@ class RadiusManagementService:
 
     # ==================== MIKROTIK RADIUS CLIENT MANAGEMENT ====================
 
+    def lookup_nas_by_ip(self, nas_ip: str) -> Dict[str, Any]:
+        """
+        Lookup NAS (router) details by IP address from RADIUS nas table
+
+        Args:
+            nas_ip: NAS IP address (e.g., "10.8.0.45")
+
+        Returns:
+            Dict with NAS details or error
+        """
+        logger.info("Looking up NAS by IP", nas_ip=nas_ip)
+
+        try:
+            with self.get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT nasname, shortname, secret, type
+                        FROM nas
+                        WHERE nasname = %s
+                    """, (nas_ip,))
+
+                    nas = cursor.fetchone()
+
+                    if not nas:
+                        logger.warning("NAS not found", nas_ip=nas_ip)
+                        return {
+                            'success': False,
+                            'error': f'NAS with IP {nas_ip} not found in database'
+                        }
+
+                    logger.info("NAS found", nas_ip=nas_ip, shortname=nas['shortname'])
+
+                    return {
+                        'success': True,
+                        'nasname': nas['nasname'],
+                        'shortname': nas['shortname'],
+                        'secret': nas['secret'],
+                        'type': nas['type'],
+                        'client_name': nas['shortname']  # Alias for device identity
+                    }
+
+        except Exception as e:
+            logger.error("NAS lookup failed", error=str(e), exc_info=True)
+            return {
+                'success': False,
+                'error': f'Database error: {str(e)}'
+            }
+
     def register_mikrotik_radius_client(self, username: str, identity: str,
                                        secret: str, ip_address: str) -> Dict[str, Any]:
         """
@@ -1083,4 +1131,103 @@ client {identity} {{
             return {
                 'success': False,
                 'error': f'Failed to register RADIUS client: {str(e)}'
+            }
+
+    def register_nas_client(self, nas_ip: str, shortname: str, secret: str,
+                           nas_type: str = 'other', description: str = '') -> Dict[str, Any]:
+        """
+        Register NAS client in RADIUS nas table (for SQL client loading)
+
+        Args:
+            nas_ip: NAS IP address (VPN IP like 10.8.0.45)
+            shortname: Router identity (e.g., abutis_Mikrotik123)
+            secret: RADIUS shared secret
+            nas_type: NAS type (default: 'other')
+            description: Description of this NAS
+
+        Returns:
+            Dict with success status and message
+        """
+        logger.info("Registering NAS client in SQL table", nas_ip=nas_ip, shortname=shortname)
+
+        try:
+            with self.get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # Check if NAS already exists
+                    cursor.execute("SELECT id FROM nas WHERE nasname = %s", (nas_ip,))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        # Update existing NAS
+                        cursor.execute("""
+                            UPDATE nas SET shortname = %s, secret = %s,
+                                   type = %s, description = %s
+                            WHERE nasname = %s
+                        """, (shortname, secret, nas_type, description, nas_ip))
+                        conn.commit()
+                        logger.info("NAS client updated in SQL table", nas_ip=nas_ip)
+                        return {
+                            'success': True,
+                            'message': f'NAS {nas_ip} updated successfully',
+                            'nas_ip': nas_ip,
+                            'shortname': shortname
+                        }
+                    else:
+                        # Insert new NAS
+                        cursor.execute("""
+                            INSERT INTO nas (nasname, shortname, secret, type, description)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (nas_ip, shortname, secret, nas_type, description))
+                        conn.commit()
+                        logger.info("NAS client registered in SQL table", nas_ip=nas_ip)
+                        return {
+                            'success': True,
+                            'message': f'NAS {nas_ip} registered successfully',
+                            'nas_ip': nas_ip,
+                            'shortname': shortname
+                        }
+
+        except Exception as e:
+            logger.error("NAS registration failed", error=str(e), exc_info=True)
+            return {
+                'success': False,
+                'error': f'Database error: {str(e)}'
+            }
+
+    def unregister_nas_client(self, nas_ip: str) -> Dict[str, Any]:
+        """
+        Remove NAS client from RADIUS nas table
+
+        Args:
+            nas_ip: NAS IP address to remove
+
+        Returns:
+            Dict with success status
+        """
+        logger.info("Unregistering NAS client from SQL table", nas_ip=nas_ip)
+
+        try:
+            with self.get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM nas WHERE nasname = %s", (nas_ip,))
+                    conn.commit()
+
+                    if cursor.rowcount > 0:
+                        logger.info("NAS client unregistered from SQL table", nas_ip=nas_ip)
+                        return {
+                            'success': True,
+                            'message': f'NAS {nas_ip} removed successfully'
+                        }
+                    else:
+                        logger.warning("NAS not found in SQL table", nas_ip=nas_ip)
+                        return {
+                            'success': False,
+                            'error': f'NAS {nas_ip} not found'
+                        }
+
+        except Exception as e:
+            logger.error("NAS unregistration failed", error=str(e), exc_info=True)
+            return {
+                'success': False,
+                'error': f'Database error: {str(e)}'
             }

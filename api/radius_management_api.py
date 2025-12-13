@@ -736,6 +736,133 @@ def authorize_hotspot():
 
 # ==================== MIKROTIK RADIUS CLIENT ENDPOINTS ====================
 
+@radius_mgmt_bp.route('/nas/lookup', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['nas_ip']
+)
+def lookup_nas():
+    """
+    Lookup NAS (router) details by IP address from RADIUS nas table
+
+    Request:
+    {
+        "nas_ip": "10.8.0.45"
+    }
+
+    Response:
+    {
+        "success": true,
+        "nasname": "10.8.0.45",
+        "shortname": "abutis_Mikrotik16767678",
+        "secret": "H5ySEduJ7EaDeJ0h",
+        "type": "other"
+    }
+    """
+    try:
+        data = request.get_json()
+        nas_ip = data['nas_ip']
+
+        logger.info("NAS lookup request", nas_ip=nas_ip)
+
+        service = RadiusManagementService(current_app)
+        result = service.lookup_nas_by_ip(nas_ip=nas_ip)
+
+        status_code = 200 if result['success'] else 404
+        return jsonify(result), status_code
+
+    except Exception as e:
+        logger.error("NAS lookup failed", error=str(e), exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
+@radius_mgmt_bp.route('/nas/register', methods=['POST'])
+@api_endpoint(
+    require_auth=True,
+    require_json=True,
+    required_fields=['nas_ip', 'shortname', 'secret']
+)
+def register_nas():
+    """
+    Register NAS client in RADIUS nas table (SQL client loading)
+
+    Request:
+    {
+        "nas_ip": "10.8.0.45",
+        "shortname": "abutis_Mikrotik123",
+        "secret": "H5ySEduJ7EaDeJ0h",
+        "type": "other",
+        "description": "Abutis - Router 1"
+    }
+
+    Response:
+    {
+        "success": true,
+        "message": "NAS 10.8.0.45 registered successfully",
+        "nas_ip": "10.8.0.45",
+        "shortname": "abutis_Mikrotik123"
+    }
+    """
+    try:
+        data = request.get_json()
+
+        logger.info("NAS registration request",
+                   nas_ip=data['nas_ip'],
+                   shortname=data['shortname'])
+
+        service = RadiusManagementService(current_app)
+        result = service.register_nas_client(
+            nas_ip=data['nas_ip'],
+            shortname=data['shortname'],
+            secret=data['secret'],
+            nas_type=data.get('type', 'other'),
+            description=data.get('description', '')
+        )
+
+        status_code = 200 if result['success'] else 400
+        return jsonify(result), status_code
+
+    except Exception as e:
+        logger.error("NAS registration failed", error=str(e), exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
+@radius_mgmt_bp.route('/nas/<nas_ip>', methods=['DELETE'])
+@api_endpoint(require_auth=True, require_json=False)
+def unregister_nas(nas_ip):
+    """
+    Delete NAS client from RADIUS nas table
+
+    Response:
+    {
+        "success": true,
+        "message": "NAS 10.8.0.45 removed successfully"
+    }
+    """
+    try:
+        logger.info("NAS unregistration request", nas_ip=nas_ip)
+
+        service = RadiusManagementService(current_app)
+        result = service.unregister_nas_client(nas_ip=nas_ip)
+
+        status_code = 200 if result['success'] else 404
+        return jsonify(result), status_code
+
+    except Exception as e:
+        logger.error("NAS unregistration failed", error=str(e), exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
 @radius_mgmt_bp.route('/register-mikrotik', methods=['POST'])
 @api_endpoint(
     require_auth=True,
